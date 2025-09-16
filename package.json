@@ -1,0 +1,16 @@
+{
+  "name": "frelated",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "dev:web-editor-ui": "pnpm --filter @frelated/web-editor-ui dev",
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r test"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "eslint": "^9.0.0",
+    "prettier": "^3.3.0"
+  },
+  "packageManager": "pnpm@10.16.1"
+}
