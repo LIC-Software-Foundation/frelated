@@ -4,13 +4,36 @@
   "version": "1.0.0",
   "scripts": {
     "dev:web-editor-ui": "pnpm --filter @frelated/web-editor-ui dev",
-    "lint": "pnpm -r lint",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "prepare": "husky",
     "test": "pnpm -r test"
   },
   "devDependencies": {
     "typescript": "^5.4.0",
-    "eslint": "^9.0.0",
-    "prettier": "^3.3.0"
+    "@commitlint/cli": "^19.5.0",
+    "@commitlint/config-conventional": "^19.5.0",
+    "@eslint/js": "^9.14.0",
+    "eslint": "^9.14.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-prettier": "^5.2.1",
+    "eslint-plugin-react": "^7.37.2",
+    "eslint-plugin-react-hooks": "^5.0.0",
+    "eslint-plugin-react-refresh": "^0.4.14",
+    "globals": "^15.11.0",
+    "husky": "^9.1.6",
+    "lint-staged": "^15.2.10",
+    "prettier": "^3.3.3",
+    "typescript-eslint": "^8.12.2"
+  },
+  "engines": {
+    "node": ">=22.11.0"
+  },
+  "lint-staged": {
+    "**/*.{js,ts,tsx}": [
+      "eslint --fix"
+    ],
+    "**/*": "prettier --write --ignore-unknown"
   },
   "packageManager": "pnpm@10.16.1"
 }
