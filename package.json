@@ -4,6 +4,8 @@
   "version": "1.0.0",
   "scripts": {
     "dev:web-editor-ui": "pnpm --filter @frelated/web-editor-ui dev",
+    "build:web-editor-ui": "pnpm --filter @frelated/web-editor-ui build",
+    "build:utils": "pnpm --filter @frelated/utils build",
     "lint": "eslint .",
     "format": "prettier --write .",
     "prepare": "husky",

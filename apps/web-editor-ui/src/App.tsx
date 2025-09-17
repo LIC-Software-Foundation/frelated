@@ -1,4 +1,4 @@
-import { isBlank } from 'common';
+import { isBlank } from '@frelated/utils';
 
 const App = () => {
   return (
