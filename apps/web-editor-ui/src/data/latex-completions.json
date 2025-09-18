@@ -1,0 +1,28 @@
+[
+  { "label": "\\section{}", "type": "keyword" },
+  { "label": "\\subsection{}", "type": "keyword" },
+  { "label": "\\textbf{}", "type": "keyword" },
+  { "label": "\\textit{}", "type": "keyword" },
+  {
+    "label": "\\begin{itemize}",
+    "type": "keyword",
+    "template": "\\begin{itemize}\n  \\item \n\\end{itemize}"
+  },
+  {
+    "label": "\\begin{enumerate}",
+    "type": "keyword",
+    "template": "\\begin{enumerate}\n  \\item \n\\end{enumerate}"
+  },
+  { "label": "\\begin{equation}", "type": "keyword" },
+  { "label": "\\begin{block}", "type": "keyword" },
+  {
+    "label": "\\begin{figure}",
+    "type": "keyword",
+    "template": "\\begin{figure}[h]\n  \\centering\n  \\includegraphics[width=0.8\\textwidth]{example-image}\n  \\caption{Your caption here}\n  \\label{fig:your-label}\n\\end{figure}"
+  },
+  { "label": "\\item", "type": "keyword" },
+  { "label": "\\alpha", "type": "variable" },
+  { "label": "\\beta", "type": "variable" },
+  { "label": "\\gamma", "type": "variable" },
+  { "label": "\\frac{}{}", "type": "keyword" }
+]

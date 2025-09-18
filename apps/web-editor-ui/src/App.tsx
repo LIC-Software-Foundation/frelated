@@ -1,14 +1,16 @@
-import { isBlank } from '@frelated/utils';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import Editor from './views/pages/Editor';
+import Home from './views/Home';
 
-const App = () => {
+function App() {
   return (
-    <>
-      <p>undefined isBlank - {isBlank(undefined) ? 'true' : 'false'}</p>
-      <p>false isBlank - {isBlank(false) ? 'true' : 'false'}</p>
-      <p>true isBlank - {isBlank(true) ? 'true' : 'false'}</p>
-      <p>Empty object isBlank - {isBlank({}) ? 'true' : 'false'}</p>
-    </>
+    <Router>
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/editor" element={<Editor />} />
+      </Routes>
+    </Router>
   );
-};
+}
 
 export default App;
