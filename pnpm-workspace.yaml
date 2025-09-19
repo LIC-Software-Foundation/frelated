@@ -4,3 +4,10 @@ packages:
 
 ignoredBuiltDependencies:
   - esbuild
+
+onlyBuiltDependencies:
+  - '@nestjs/core'
+  - '@openapitools/openapi-generator-cli'
+  - '@prisma/client'
+  - '@prisma/engines'
+  - prisma

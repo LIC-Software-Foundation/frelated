@@ -45,7 +45,7 @@ const Home = () => {
             <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
               <span className="text-white font-bold text-sm">Lᴀ</span>
             </div>
-            <span className="text-white font-bold text-xl">LaTeX Editor</span>
+            <span className="text-white font-bold text-xl">FreLatEd</span>
           </div>
           <div className="flex items-center space-x-6">
             <a
@@ -190,7 +190,7 @@ const Home = () => {
             <div className="w-6 h-6 bg-gradient-to-r from-blue-500 to-purple-600 rounded flex items-center justify-center">
               <span className="text-white font-bold text-xs">Lᴀ</span>
             </div>
-            <span className="text-gray-400">© 2025 LaTeX Editor</span>
+            <span className="text-gray-400">© 2025 FreLatEd</span>
           </div>
           <div className="flex items-center space-x-6">
             <a

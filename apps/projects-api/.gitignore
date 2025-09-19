@@ -138,5 +138,6 @@ dist-ssr
 *.sln
 *.sw?
 
-
+/generated
 openapi.json
+openapitools.json

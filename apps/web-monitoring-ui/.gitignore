@@ -137,6 +137,3 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
-
-
-openapi.json

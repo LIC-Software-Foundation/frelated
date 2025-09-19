@@ -1,0 +1,40 @@
+{
+  "name": "@frelated/projects-api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "test": "vitest",
+    "prisma:init": "prisma init",
+    "prisma:dev": "prisma dev",
+    "prisma:generate": "prisma generate --no-engine",
+    "export:openapi": "tsx src/tools/export-openapi.ts",
+    "generate:client": "pnpm export:openapi && openapi-generator-cli generate -i openapi.json -g typescript-fetch -o ../../packages/projects-api-client/src"
+  },
+  "dependencies": {
+    "@fastify/swagger": "^9.5.1",
+    "@fastify/swagger-ui": "^5.2.3",
+    "@prisma/client": "^6.16.2",
+    "fastify": "^5.0.0",
+    "fastify-plugin": "^5.0.1",
+    "mongodb": "^6.20.0",
+    "mongoose": "^8.0.0",
+    "pg": "^8.11.3",
+    "reflect-metadata": "^0.1.13",
+    "typeorm": "^0.3.20",
+    "zod": "^3.22.0"
+  },
+  "devDependencies": {
+    "@openapitools/openapi-generator-cli": "^2.23.4",
+    "@types/node": "^24.5.2",
+    "prisma": "^6.16.2",
+    "tsx": "^4.0.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.5.0"
+  },
+  "packageManager": "pnpm@10.16.1"
+}

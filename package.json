@@ -5,11 +5,14 @@
   "scripts": {
     "dev:web-editor-ui": "pnpm --filter @frelated/web-editor-ui dev",
     "build:web-editor-ui": "pnpm --filter @frelated/web-editor-ui build",
+    "dev:web-monitoring-ui": "pnpm --filter @frelated/web-monitoring-ui dev",
+    "build:web-monitoring-ui": "pnpm --filter @frelated/web-monitoring-ui build",
     "build:utils": "pnpm --filter @frelated/utils build",
     "lint": "eslint .",
     "format": "prettier --write .",
     "prepare": "husky",
-    "test": "pnpm -r test"
+    "test": "pnpm -r test",
+    "dev": "pnpm -r --parallel run dev"
   },
   "devDependencies": {
     "typescript": "^5.4.0",
