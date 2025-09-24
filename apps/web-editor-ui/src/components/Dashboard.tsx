@@ -293,7 +293,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                     p.id === selectedProject.id
                       ? { ...p, collaborators: collabs }
                       : p,
-                  );
+                  ) as Project[];
                   setSelectedProject(
                     updatedProjects.find((p) => p.id === selectedProject.id),
                   );

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useRef, useState } from 'react';
 import { EditorView, basicSetup } from 'codemirror';
 import { EditorState } from '@codemirror/state';
@@ -7,13 +8,13 @@ import { yCollab } from 'y-codemirror.next';
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 import { Save, Users, Wifi, WifiOff } from 'lucide-react';
-import { User, Project } from '@frelated/types';
+import { User, Project, Collaborator } from '@frelated/types';
 
 interface ProjectEditorProps {
   project: Project;
   fileName: string;
   user: User;
-  onCollaboratorsChange: (collaborators: User[]) => void;
+  onCollaboratorsChange: (users: Collaborator[]) => void;
 }
 
 const ProjectEditor: React.FC<ProjectEditorProps> = ({
@@ -28,28 +29,21 @@ const ProjectEditor: React.FC<ProjectEditorProps> = ({
   const providerRef = useRef<WebsocketProvider | null>(null);
 
   const [isConnected, setIsConnected] = useState(false);
-  const [collaborators, setCollaborators] = useState<User[]>([]);
+  const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
   const [isDark, setIsDark] = useState(false);
 
   useEffect(() => {
     if (!editorRef.current) return;
 
-    // Clean up previous editor
-    if (viewRef.current) {
-      viewRef.current.destroy();
-    }
-    if (providerRef.current) {
-      providerRef.current.destroy();
-    }
+    if (viewRef.current) viewRef.current.destroy();
+    if (providerRef.current) providerRef.current.destroy();
 
     const doc = new Y.Doc();
     docRef.current = doc;
 
     const roomName = `${project.id}-${fileName}`;
-
-    // Setup Y-WebSocket provider
     const provider = new WebsocketProvider(
-      'ws://localhost:8080/',
+      'ws://localhost:8080',
       roomName,
       doc,
     );
@@ -57,7 +51,6 @@ const ProjectEditor: React.FC<ProjectEditorProps> = ({
 
     const yText = doc.getText('codemirror');
 
-    // Pre-fill LaTeX template
     if (yText.length === 0 && fileName === 'main.tex') {
       yText.insert(
         0,
@@ -106,25 +99,24 @@ Summarize your findings here.
     });
     viewRef.current = view;
 
-    // Track connection status
     provider.on('status', (event: { status: string }) => {
       setIsConnected(event.status === 'connected');
+      console.log(`Connection status: ${event.status}`);
     });
 
-    // Update collaborators
     provider.awareness.on('update', () => {
       const states = Array.from(provider.awareness.getStates().values());
-      const activeUsers = states
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const activeUsers: Collaborator[] = states
         .filter((state: any) => state.user)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .map((state: any) => state.user as User);
-
+        .map((state: any) => state.user);
       setCollaborators(activeUsers);
       onCollaboratorsChange(activeUsers);
     });
 
-    // Set local awareness
+    doc.on('update', () => {
+      console.log('Document updated by:', user.name);
+    });
+
     provider.awareness.setLocalStateField('user', {
       name: user.name,
       color: getRandomColor(),
@@ -132,12 +124,10 @@ Summarize your findings here.
     });
 
     return () => {
-      if (viewRef.current) viewRef.current.destroy();
-      if (providerRef.current) providerRef.current.destroy();
-      if (view) view.destroy();
-      if (provider) provider.destroy();
+      view.destroy();
+      provider.destroy();
     };
-  }, [project.id, fileName, user, isDark, onCollaboratorsChange]);
+  }, [project.id, fileName, user, isDark]);
 
   const getRandomColor = (): string => {
     const colors = [
@@ -153,7 +143,6 @@ Summarize your findings here.
   };
 
   const handleSave = () => {
-    // In a real app, save to backend
     console.log('Saving document...', fileName);
     alert('Document saved successfully!');
   };
@@ -208,12 +197,11 @@ Summarize your findings here.
                     key={index}
                     className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-medium border-2 border-white"
                     style={{
-                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
                       backgroundColor: (collaborator as any).color || '#666',
                     }}
                     title={collaborator.name}
                   >
-                    {collaborator.name.charAt(0).toUpperCase()}
+                    {collaborator.name!.charAt(0).toUpperCase()}
                   </div>
                 ))}
                 {collaborators.length > 3 && (

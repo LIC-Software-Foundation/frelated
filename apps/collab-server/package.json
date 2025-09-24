@@ -4,10 +4,11 @@
   "private": true,
   "type": "module",
   "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc -p tsconfig.json",
-    "start": "node dist/index.js",
+    "build": "tsc && vite build",
+    "start": "vite",
     "test": "vitest"
   },
   "dependencies": {
@@ -20,7 +21,9 @@
     "tsx": "^4.0.0",
     "typescript": "^5.4.0",
     "vitest": "^1.5.0",
-    "yjs": "^13.6.27"
+    "yjs": "^13.6.27",
+    "vite": "^5.4.10",
+    "vite-plugin-dts": "^4.3.0"
   },
   "packageManager": "pnpm@10.16.1"
 }
