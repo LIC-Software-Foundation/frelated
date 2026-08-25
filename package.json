@@ -4,6 +4,8 @@
   "version": "1.0.0",
   "scripts": {
     "dev:web-editor-ui": "pnpm --filter @frelated/web-editor-ui dev",
+    "dev:projects-api": "pnpm --filter @frelated/projects-api dev",
+    "dev:collab-server": "pnpm --filter @frelated/collab-server dev",
     "build:web-editor-ui": "pnpm --filter @frelated/web-editor-ui build",
     "dev:web-monitoring-ui": "pnpm --filter @frelated/web-monitoring-ui dev",
     "build:web-monitoring-ui": "pnpm --filter @frelated/web-monitoring-ui build",

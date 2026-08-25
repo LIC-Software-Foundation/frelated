@@ -1,0 +1,397 @@
+{
+  "users": [
+    {
+      "id": "c0e31180-585f-4905-9d17-651de0cb4023",
+      "name": "Amina Njoya",
+      "email": "amina@frelate.dev",
+      "joinedAt": "2026-03-22T06:56:25.454Z",
+      "passwordHash": "74cba15b0a1c17397113b65513fd0fa81a343c71b0662124f03c3b72119805ff48a935c9cb3c3b7ca31f71439ef7d73a099d381562837ace9ba40c24898cc928",
+      "passwordSalt": "e2cf304eff4f633c2948dfa97803420d",
+      "organization": "OpenResearch"
+    },
+    {
+      "id": "c706b97d-19fc-4dd8-9a69-475aabe3b8f7",
+      "name": "Open Research",
+      "email": "openresearch@frelated.dev",
+      "joinedAt": "2026-03-22T06:56:25.454Z",
+      "passwordHash": "d85782dc135ca5f65cba9056bd97f543180ac5da090a0ec00578399e5c7b6451c0a8f2e93dafc59017ba68b30058c974a30b9a9d3e60eb4effa26a4cf057d70b",
+      "passwordSalt": "9938e5471b3f467ab74b79e5d983d606",
+      "organization": "OpenResearch"
+    },
+    {
+      "id": "bb8f2ac1-382e-4c96-95f2-9f39fe38682b",
+      "name": "Regent",
+      "email": "regent@gmail.com",
+      "joinedAt": "2026-03-22T12:32:21.896Z",
+      "passwordHash": "9df5cdff2dc407954d1e61ff7e86740d778473ef55bfddaeca2469c3f8dbee32de4303d04598ce67bad3a5bc1d89c0894cd7df478ddb19720575df78c81d1823",
+      "passwordSalt": "1f93030d4a7984b7202a922de34b2fc8"
+    },
+    {
+      "id": "d41f8091-57aa-4f4a-be3c-ca24056855ce",
+      "name": "Paul",
+      "email": "paul@openlab.africa",
+      "joinedAt": "2026-03-22T12:32:46.102Z",
+      "passwordHash": "aa048b5459b4659e10d57d6e77496689b825d24a281b89117c7076d6eee07a6bcd6e6a61e9e759b202cefb7d6f92e19ac011cd1c91e7a19743b2fa3ca8ae5403",
+      "passwordSalt": "9a3c3c3b82836473d0accd669915d98b"
+    },
+    {
+      "id": "30ecf525-1a76-4d45-a923-11e91cf6336d",
+      "name": "Test",
+      "email": "test@frelated.com",
+      "joinedAt": "2026-03-22T16:36:54.092Z",
+      "passwordHash": "58ef4478d0b8ad1d63daeb9c796b93a6b039f81b3dc91de3b765b1b247bc5fc7a424b4673308f3765977bfe0127a1706f4b32b00fe6ff190f64ced80ca3272b5",
+      "passwordSalt": "e3397e4f8a4583729bc905c93fe6198e"
+    }
+  ],
+  "projects": [
+    {
+      "id": "ecb71f37-65c3-4a51-8e42-43a9829bba2e",
+      "name": "Article collaboratif Frelated",
+      "owner": "amina@frelated.dev",
+      "createdAt": "2026-03-22T06:56:25.454Z",
+      "updatedAt": "2026-03-22T16:28:41.249Z",
+      "lastOpenedAt": "2026-03-22T16:12:23.295Z",
+      "collaborators": [
+        {
+          "id": "amina@frelated.dev",
+          "name": "Amina Njoya",
+          "email": "amina@frelated.dev",
+          "role": "editor",
+          "isOnline": true
+        },
+        {
+          "id": "c706b97d-19fc-4dd8-9a69-475aabe3b8f7",
+          "name": "Open Research",
+          "email": "openresearch@frelated.dev",
+          "role": "editor",
+          "isOnline": false
+        },
+        {
+          "id": "d41f8091-57aa-4f4a-be3c-ca24056855ce",
+          "name": "Paul",
+          "email": "paul@openlab.africa",
+          "role": "editor",
+          "isOnline": false
+        },
+        {
+          "id": "bb8f2ac1-382e-4c96-95f2-9f39fe38682b",
+          "name": "Regent",
+          "email": "regent@gmail.com",
+          "role": "editor",
+          "isOnline": false
+        }
+      ],
+      "files": [
+        {
+          "id": "0a5c9ada-e32f-4218-b28f-3c3ccf717bb0",
+          "name": "figures",
+          "type": "folder",
+          "children": [],
+          "createdAt": "2026-03-22T06:56:25.454Z"
+        },
+        {
+          "id": "c59efad5-8320-40cb-91aa-a947eb6fdbd3",
+          "name": "main.tex",
+          "type": "tex",
+          "content": "",
+          "createdAt": "2026-03-22T06:56:25.454Z"
+        },
+        {
+          "id": "02843bc9-5cb0-4bfc-ab91-7a032f78ed2b",
+          "name": "references.bib",
+          "type": "bib",
+          "content": "jnrfnj",
+          "createdAt": "2026-03-22T06:56:25.454Z"
+        }
+      ],
+      "hasTexFile": true
+    },
+    {
+      "id": "8e53984e-5dc4-4366-81c4-71c96d785c40",
+      "name": "Premier projet",
+      "owner": "openresearch@frelated.dev",
+      "createdAt": "2026-03-22T11:26:56.018Z",
+      "updatedAt": "2026-03-22T15:36:00.662Z",
+      "lastOpenedAt": "2026-03-22T15:35:36.586Z",
+      "collaborators": [
+        {
+          "id": "c706b97d-19fc-4dd8-9a69-475aabe3b8f7",
+          "name": "Open Research",
+          "email": "openresearch@frelated.dev",
+          "role": "owner",
+          "isOnline": false
+        }
+      ],
+      "files": [
+        {
+          "id": "308f1ba4-00bd-4bc9-8a9a-5d97b2e0bb63",
+          "name": "main.tex",
+          "type": "tex",
+          "content": "",
+          "createdAt": "2026-03-22T11:26:56.020Z"
+        },
+        {
+          "id": "03d4f7e6-344e-4f56-8a49-b34e9373bd9d",
+          "name": "references.bib",
+          "type": "bib",
+          "content": "",
+          "createdAt": "2026-03-22T11:26:56.020Z"
+        },
+        {
+          "id": "42d19da5-e9e8-4709-ad3f-1dc97a4aa3ba",
+          "name": "figures",
+          "type": "folder",
+          "children": [],
+          "createdAt": "2026-03-22T11:26:56.020Z"
+        }
+      ],
+      "hasTexFile": true
+    },
+    {
+      "id": "b6f885e1-fb28-4731-b3bd-8290eaf4416d",
+      "name": "test",
+      "owner": "amina@frelated.dev",
+      "createdAt": "2026-03-22T11:33:12.549Z",
+      "updatedAt": "2026-03-22T11:33:12.549Z",
+      "lastOpenedAt": "2026-03-22T11:33:12.549Z",
+      "collaborators": [
+        {
+          "id": "c0e31180-585f-4905-9d17-651de0cb4023",
+          "name": "Amina Njoya",
+          "email": "amina@frelated.dev",
+          "role": "owner",
+          "isOnline": false
+        }
+      ],
+      "files": [
+        {
+          "id": "87148586-c3da-4720-9ebb-083000492811",
+          "name": "main.tex",
+          "type": "tex",
+          "content": "\\section{test}\nVotre contenu ici.",
+          "createdAt": "2026-03-22T11:33:12.550Z"
+        },
+        {
+          "id": "1e333cf0-45d8-402a-a26b-14a3e7824b9d",
+          "name": "references.bib",
+          "type": "bib",
+          "content": "",
+          "createdAt": "2026-03-22T11:33:12.550Z"
+        },
+        {
+          "id": "124d0603-4103-4a43-9e00-dc1fb7842ed4",
+          "name": "figures",
+          "type": "folder",
+          "children": [],
+          "createdAt": "2026-03-22T11:33:12.550Z"
+        }
+      ],
+      "hasTexFile": true
+    },
+    {
+      "id": "f97f28f1-6896-4828-9137-8fb5315eb9ac",
+      "name": "Test",
+      "owner": "regent@gmail.com",
+      "createdAt": "2026-03-22T12:32:55.466Z",
+      "updatedAt": "2026-03-22T14:38:33.199Z",
+      "lastOpenedAt": "2026-03-22T14:36:44.756Z",
+      "collaborators": [
+        {
+          "id": "regent@gmail.com",
+          "name": "Regent",
+          "email": "regent@gmail.com",
+          "role": "owner",
+          "isOnline": false
+        }
+      ],
+      "files": [
+        {
+          "id": "2f18f0a9-8ca0-436d-a00e-2fbc2b574568",
+          "name": "main.tex",
+          "type": "tex",
+          "content": "",
+          "createdAt": "2026-03-22T12:32:55.466Z"
+        },
+        {
+          "id": "4d193801-3c0e-4d73-8eb4-3eb2f62ce83b",
+          "name": "references.bib",
+          "type": "bib",
+          "content": "",
+          "createdAt": "2026-03-22T12:32:55.466Z"
+        },
+        {
+          "id": "36e33976-60f8-4e86-a9a5-0114c1e57d80",
+          "name": "figures",
+          "type": "folder",
+          "children": [],
+          "createdAt": "2026-03-22T12:32:55.466Z"
+        }
+      ],
+      "hasTexFile": true
+    },
+    {
+      "id": "85f5d9a0-4c69-41f8-ac48-5a5f76edfa3f",
+      "name": "Projet recherche",
+      "owner": "regent@gmail.com",
+      "createdAt": "2026-03-22T12:33:12.659Z",
+      "updatedAt": "2026-03-22T16:34:47.838Z",
+      "lastOpenedAt": "2026-03-22T16:34:47.165Z",
+      "collaborators": [
+        {
+          "id": "bb8f2ac1-382e-4c96-95f2-9f39fe38682b",
+          "name": "Regent",
+          "email": "regent@gmail.com",
+          "role": "owner",
+          "isOnline": false
+        }
+      ],
+      "files": [
+        {
+          "id": "125fbbc3-60ab-4d90-90d7-d33350519941",
+          "name": "main.tex",
+          "type": "tex",
+          "content": "\\section{Projet recherche}\nVotre contenu ici.",
+          "createdAt": "2026-03-22T12:33:12.660Z"
+        },
+        {
+          "id": "72fa7e83-6556-49e2-8b8a-a919a52acf5b",
+          "name": "references.bib",
+          "type": "bib",
+          "content": "",
+          "createdAt": "2026-03-22T12:33:12.660Z"
+        },
+        {
+          "id": "384de05d-e2ac-47e7-bf23-6e715d912259",
+          "name": "figures",
+          "type": "folder",
+          "children": [],
+          "createdAt": "2026-03-22T12:33:12.660Z"
+        }
+      ],
+      "hasTexFile": true
+    },
+    {
+      "id": "e6b08d0a-6119-4291-924c-5f8ff747d57a",
+      "name": "Premier projet",
+      "owner": "regent@gmail.com",
+      "createdAt": "2026-03-22T14:38:33.242Z",
+      "updatedAt": "2026-03-22T14:52:46.551Z",
+      "lastOpenedAt": "2026-03-22T14:52:27.876Z",
+      "collaborators": [
+        {
+          "id": "bb8f2ac1-382e-4c96-95f2-9f39fe38682b",
+          "name": "Regent",
+          "email": "regent@gmail.com",
+          "role": "owner",
+          "isOnline": false
+        }
+      ],
+      "files": [
+        {
+          "id": "c0483c84-c084-4730-8940-104d06e726cc",
+          "name": "main.tex",
+          "type": "tex",
+          "content": "",
+          "createdAt": "2026-03-22T14:38:33.243Z"
+        },
+        {
+          "id": "2ac8969a-f14a-4332-b54c-6dd42bbdeb94",
+          "name": "references.bib",
+          "type": "bib",
+          "content": "",
+          "createdAt": "2026-03-22T14:38:33.243Z"
+        },
+        {
+          "id": "ac7cd4b5-b7d1-4757-8fd8-16a523bfeb1e",
+          "name": "figures",
+          "type": "folder",
+          "children": [],
+          "createdAt": "2026-03-22T14:38:33.243Z"
+        }
+      ],
+      "hasTexFile": true
+    },
+    {
+      "id": "3d16c871-532a-45c9-9934-d387b31b9bd5",
+      "name": "Mon projet",
+      "owner": "paul@openlab.africa",
+      "createdAt": "2026-03-22T14:42:27.320Z",
+      "updatedAt": "2026-03-22T14:53:17.601Z",
+      "lastOpenedAt": "2026-03-22T14:52:59.035Z",
+      "collaborators": [
+        {
+          "id": "d41f8091-57aa-4f4a-be3c-ca24056855ce",
+          "name": "Paul",
+          "email": "paul@openlab.africa",
+          "role": "owner",
+          "isOnline": false
+        }
+      ],
+      "files": [
+        {
+          "id": "9d41339d-8817-4b87-89b3-3c84af013d14",
+          "name": "main.tex",
+          "type": "tex",
+          "content": "\\section{Mon projet}\nVotre contenu ici.",
+          "createdAt": "2026-03-22T14:42:27.320Z"
+        },
+        {
+          "id": "e03ccdaf-b493-4590-b437-2b8152869cf0",
+          "name": "references.bib",
+          "type": "bib",
+          "content": "",
+          "createdAt": "2026-03-22T14:42:27.320Z"
+        },
+        {
+          "id": "304a501b-a4cc-468e-a69d-e2be09352873",
+          "name": "figures",
+          "type": "folder",
+          "children": [],
+          "createdAt": "2026-03-22T14:42:27.320Z"
+        }
+      ],
+      "hasTexFile": true
+    },
+    {
+      "id": "50acc86a-1519-43eb-a3b1-a2a41ee7f7d3",
+      "name": "test",
+      "owner": "paul@openlab.africa",
+      "createdAt": "2026-03-22T15:37:18.501Z",
+      "updatedAt": "2026-03-22T15:40:27.737Z",
+      "lastOpenedAt": "2026-03-22T15:37:18.827Z",
+      "collaborators": [
+        {
+          "id": "06fe5a17-8d37-4b5e-b926-3b8786ac2898",
+          "name": "Paul",
+          "email": "paul@openlab.africa",
+          "role": "owner",
+          "isOnline": false
+        }
+      ],
+      "files": [
+        {
+          "id": "9f099cac-cf28-404e-8e02-4378f451a850",
+          "name": "main.tex",
+          "type": "tex",
+          "content": "",
+          "createdAt": "2026-03-22T15:37:18.501Z"
+        },
+        {
+          "id": "3e6d11c9-64c3-40c3-8927-c499c07da551",
+          "name": "references.bib",
+          "type": "bib",
+          "content": "",
+          "createdAt": "2026-03-22T15:37:18.501Z"
+        },
+        {
+          "id": "509ac810-3088-4258-be5f-21e9ad76f9c6",
+          "name": "figures",
+          "type": "folder",
+          "children": [],
+          "createdAt": "2026-03-22T15:37:18.501Z"
+        }
+      ],
+      "hasTexFile": true
+    }
+  ]
+}

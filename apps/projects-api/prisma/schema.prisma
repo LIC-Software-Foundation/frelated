@@ -6,10 +6,73 @@
 
 generator client {
   provider = "prisma-client-js"
-  output   = "../generated/prisma"
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "mysql"
   url      = env("DATABASE_URL")
+}
+
+model User {
+  id                   String                @id @db.VarChar(64)
+  name                 String                @db.VarChar(255)
+  email                String                @unique @db.VarChar(255)
+  joinedAt             DateTime              @map("joined_at")
+  passwordHash         String                @map("password_hash") @db.VarChar(255)
+  passwordSalt         String                @map("password_salt") @db.VarChar(255)
+  organization         String?               @db.VarChar(255)
+  ownedProjects        Project[]             @relation("ProjectOwner")
+  projectCollaborators ProjectCollaborator[]
+
+  @@map("users")
+}
+
+model Project {
+  id             String                @id @db.VarChar(64)
+  name           String                @db.VarChar(255)
+  ownerId        String                @map("owner_id") @db.VarChar(64)
+  ownerEmail     String                @map("owner_email") @db.VarChar(255)
+  createdAt      DateTime              @map("created_at")
+  updatedAt      DateTime?             @map("updated_at")
+  lastOpenedAt   DateTime?             @map("last_opened_at")
+  description    String?               @db.Text
+  rootPath       String                @map("root_path") @db.VarChar(1024)
+  imported       Boolean               @default(false)
+  hasTexFile     Boolean               @default(true) @map("has_tex_file")
+  filesIndexJson Json                  @map("files_index_json")
+  owner          User                  @relation("ProjectOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  collaborators  ProjectCollaborator[]
+
+  @@index([ownerEmail], map: "idx_projects_owner_email")
+  @@map("projects")
+}
+
+model ProjectCollaborator {
+  id        String              @id @default(cuid()) @db.VarChar(64)
+  projectId String              @map("project_id") @db.VarChar(64)
+  userId    String?             @map("user_id") @db.VarChar(64)
+  name      String              @db.VarChar(255)
+  email     String              @db.VarChar(255)
+  role      CollaboratorRole
+  status    CollaboratorStatus  @default(APPROVED)
+  isOnline  Boolean             @default(false) @map("is_online")
+  canRead   Boolean             @default(true) @map("can_read")
+  canWrite  Boolean             @default(true) @map("can_write")
+  project   Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user      User?               @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@unique([projectId, email], map: "uniq_project_collaborator_email")
+  @@index([userId], map: "idx_project_collaborators_user_id")
+  @@map("project_collaborators")
+}
+
+enum CollaboratorRole {
+  VIEWER
+  EDITOR
+  OWNER
+}
+
+enum CollaboratorStatus {
+  PENDING
+  APPROVED
 }

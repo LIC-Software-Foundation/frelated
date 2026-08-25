@@ -47,6 +47,26 @@ export default [
       ],
     },
   },
+  {
+    files: ['apps/web-editor-ui/**/*.{ts,tsx}'],
+    settings: { react: { version: '19' } },
+    plugins: {
+      react,
+      'react-hooks': reactHooks,
+      'react-refresh': reactRefresh,
+    },
+    rules: {
+      ...react.configs.recommended.rules,
+      ...react.configs['jsx-runtime'].rules,
+      ...reactHooks.configs.recommended.rules,
+      'react-refresh/only-export-components': [
+        'warn',
+        { allowConstantExport: true },
+      ],
+      // TypeScript handles prop validation — no need for the runtime rule
+      'react/prop-types': 'off',
+    },
+  },
   pluginJs.configs.recommended,
   ...tseslint.configs.recommended,
   eslintPluginPrettierRecommended,

@@ -1,0 +1,162 @@
+services:
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    networks:
+      - frelated-network
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    ports:
+      - '${MYSQL_PORT:-3306}:3306'
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'mysqladmin ping -h 127.0.0.1 -u root -p$${MYSQL_ROOT_PASSWORD} --silent',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  mongodb:
+    image: mongo:7.0
+    restart: unless-stopped
+    networks:
+      - frelated-network
+    environment:
+      MONGO_INITDB_DATABASE: ${MONGO_DB_NAME}
+    ports:
+      - '${MONGO_PORT:-27017}:27017'
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          "mongosh --quiet mongodb://127.0.0.1:27017/$${MONGO_INITDB_DATABASE} --eval 'db.adminCommand({ ping: 1 }).ok' | grep 1 >/dev/null",
+        ]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 20s
+
+  projects-api:
+    build:
+      context: .
+      dockerfile: apps/projects-api/Dockerfile
+    restart: unless-stopped
+    networks:
+      - frelated-network
+    depends_on:
+      mysql:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOST: 0.0.0.0
+      PERSISTENCE_DRIVER: ${PERSISTENCE_DRIVER:-mongodb}
+      DATABASE_URL: mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE}
+      MONGODB_URL: mongodb://mongodb:27017/${MONGO_DB_NAME}
+      MONGODB_DB_NAME: ${MONGO_DB_NAME}
+      AUTH_SECRET: ${AUTH_SECRET}
+      DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY}
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN}
+      COLLAB_SERVER_URL: http://collab-server:8080
+      PRISMA_AUTO_MIGRATE: ${PRISMA_AUTO_MIGRATE:-true}
+    ports:
+      - '${PROJECTS_API_PORT:-3000}:3000'
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3000/health/ping').then((response)=>process.exit(response.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  collab-server:
+    build:
+      context: .
+      dockerfile: apps/collab-server/Dockerfile
+    restart: unless-stopped
+    networks:
+      - frelated-network
+    depends_on:
+      projects-api:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 8080
+      HOST: 0.0.0.0
+      AUTH_SECRET: ${AUTH_SECRET}
+      DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY}
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN}
+      PROJECTS_API_URL: http://projects-api:3000
+      COLLAB_STORE_ROOT: /var/lib/frelated/collab-store
+    ports:
+      - '${COLLAB_SERVER_PORT:-8080}:8080'
+    volumes:
+      - collab_store:/var/lib/frelated/collab-store
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:8080/health').then((response)=>process.exit(response.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  web-editor-ui:
+    build:
+      context: .
+      dockerfile: apps/web-editor-ui/Dockerfile
+      args:
+        VITE_SERVICE_MODE: api
+        VITE_PROJECTS_API_URL: ${PROJECTS_API_PUBLIC_URL:-http://localhost:3000}
+        VITE_COLLAB_SERVER_URL: ${COLLAB_SERVER_PUBLIC_URL:-ws://localhost:8080}
+    restart: unless-stopped
+    networks:
+      - frelated-network
+    depends_on:
+      projects-api:
+        condition: service_healthy
+      collab-server:
+        condition: service_healthy
+    ports:
+      - '${WEB_EDITOR_UI_PORT:-5173}:80'
+
+  web-monitoring-ui:
+    build:
+      context: .
+      dockerfile: apps/web-monitoring-ui/Dockerfile
+    restart: unless-stopped
+    networks:
+      - frelated-network
+    ports:
+      - '${WEB_MONITORING_UI_PORT:-5174}:80'
+
+volumes:
+  mysql_data:
+  mongo_data:
+  collab_store:
+
+networks:
+  frelated-network:
+    name: frelated-network
+    driver: bridge

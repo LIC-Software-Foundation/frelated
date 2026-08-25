@@ -1,0 +1,28 @@
+{
+  "users": [
+    {
+      "id": "seed-regent",
+      "name": "Regent",
+      "email": "regent@frelated.dev",
+      "password": "frelated123",
+      "joinedAt": "2026-03-15T11:45:00.000Z",
+      "organization": "Frelated Research Lab"
+    },
+    {
+      "id": "seed-vergez",
+      "name": "Vergez",
+      "email": "vergez@frelated.dev",
+      "password": "frelated123",
+      "joinedAt": "2026-03-15T11:46:00.000Z",
+      "organization": "Frelated Research Lab"
+    },
+    {
+      "id": "seed-hamed",
+      "name": "Hamed",
+      "email": "hamed@frelated.dev",
+      "password": "frelated123",
+      "joinedAt": "2026-03-15T11:47:00.000Z",
+      "organization": "Frelated Research Lab"
+    }
+  ]
+}
