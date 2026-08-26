@@ -1,8 +1,7 @@
 import React, { useState, ChangeEvent, FormEvent } from 'react';
-import { User, Mail, ArrowRight } from 'lucide-react';
+import { Mail, ArrowRight, BookOpen } from 'lucide-react';
 import { UserFormData } from '@frelated/types';
 
-// Props definition
 interface UserFormProps {
   onUserSubmit: (formData: UserFormData) => void;
 }
@@ -16,13 +15,8 @@ const UserForm: React.FC<UserFormProps> = ({ onUserSubmit }) => {
 
   const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!formData.name.trim() || !formData.email.trim()) {
-      return;
-    }
-
+    if (!formData.name.trim() || !formData.email.trim()) return;
     setIsSubmitting(true);
-
-    // Simulate API call
     setTimeout(() => {
       onUserSubmit(formData);
       setIsSubmitting(false);
@@ -30,98 +24,99 @@ const UserForm: React.FC<UserFormProps> = ({ onUserSubmit }) => {
   };
 
   const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value,
-    });
+    setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
+  const isValid = formData.name.trim() !== '' && formData.email.trim() !== '';
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl shadow-xl p-8 w-full max-w-md">
+    <div className="min-h-screen bg-[#1b2635] flex items-center justify-center p-4">
+      <div className="w-full max-w-sm animate-slide-up">
+        {/* Branding */}
         <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-blue-600 rounded-xl flex items-center justify-center mx-auto mb-4">
-            <User className="w-8 h-8 text-white" />
+          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-emerald-600 shadow-lg mb-4">
+            <BookOpen className="w-7 h-7 text-white" />
           </div>
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">
-            Welcome to LaTeX Collaborative
+          <h1 className="text-2xl font-bold text-white tracking-tight">
+            Frelated Editor
           </h1>
-          <p className="text-gray-600">
-            Enter your details to start collaborating
+          <p className="text-slate-400 mt-1 text-sm">
+            Éditeur LaTeX collaboratif en temps réel
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div>
-            <label
-              htmlFor="name"
-              className="block text-sm font-medium text-gray-700 mb-2"
-            >
-              Full Name
-            </label>
-            <div className="relative">
-              <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+        {/* Form card */}
+        <div className="bg-white rounded-xl shadow-2xl p-7">
+          <h2 className="text-base font-semibold text-slate-800 mb-5">
+            Accéder à l&apos;espace de travail
+          </h2>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label
+                htmlFor="name"
+                className="block text-sm font-medium text-slate-700 mb-1.5"
+              >
+                Nom complet
+              </label>
               <input
                 type="text"
                 id="name"
                 name="name"
                 value={formData.name}
                 onChange={handleChange}
-                className="pl-10 w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                placeholder="Enter your full name"
+                className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none transition-all placeholder:text-slate-400"
+                placeholder="Votre nom"
                 required
+                autoFocus
               />
             </div>
-          </div>
 
-          <div>
-            <label
-              htmlFor="email"
-              className="block text-sm font-medium text-gray-700 mb-2"
+            <div>
+              <label
+                htmlFor="email"
+                className="block text-sm font-medium text-slate-700 mb-1.5"
+              >
+                Adresse e-mail
+              </label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                <input
+                  type="email"
+                  id="email"
+                  name="email"
+                  value={formData.email}
+                  onChange={handleChange}
+                  className="w-full pl-9 pr-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none transition-all placeholder:text-slate-400"
+                  placeholder="vous@email.com"
+                  required
+                />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={isSubmitting || !isValid}
+              className="w-full flex items-center justify-center gap-2 py-2.5 px-4 mt-1 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-400 text-white text-sm font-semibold rounded-lg transition-colors"
             >
-              Email Address
-            </label>
-            <div className="relative">
-              <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-              <input
-                type="email"
-                id="email"
-                name="email"
-                value={formData.email}
-                onChange={handleChange}
-                className="pl-10 w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                placeholder="Enter your email"
-                required
-              />
-            </div>
-          </div>
-
-          <button
-            type="submit"
-            disabled={
-              isSubmitting || !formData.name.trim() || !formData.email.trim()
-            }
-            className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white font-semibold py-3 px-4 rounded-lg transition-all duration-200 flex items-center justify-center space-x-2"
-          >
-            {isSubmitting ? (
-              <>
-                <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent"></div>
-                <span>Setting up...</span>
-              </>
-            ) : (
-              <>
-                <span>Continue to Dashboard</span>
-                <ArrowRight className="w-5 h-5" />
-              </>
-            )}
-          </button>
-        </form>
-
-        <div className="mt-6 text-center">
-          <p className="text-sm text-gray-500">
-            Ready to collaborate on LaTeX documents in real-time
-          </p>
+              {isSubmitting ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  <span>Connexion…</span>
+                </>
+              ) : (
+                <>
+                  <span>Continuer</span>
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
+            </button>
+          </form>
         </div>
+
+        <p className="text-center text-slate-500 text-xs mt-5">
+          Collaboration en temps réel sur vos documents LaTeX
+        </p>
       </div>
     </div>
   );

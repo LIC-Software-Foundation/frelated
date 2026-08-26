@@ -22,8 +22,23 @@ export interface Project {
 }
 
 export interface Collaborator {
+  id?: string;
   name?: string;
   email?: string;
   role?: 'viewer' | 'editor';
   isOnline?: boolean;
+  status?: 'pending' | 'approved';
+}
+
+export interface AppNotification {
+  id: string;
+  type: 'collaboration_request';
+  read: boolean;
+  createdAt: string;
+  projectId: string;
+  projectName: string;
+  requesterName: string;
+  requesterEmail: string;
+  collaboratorId: string;
+  ownerEmail: string;
 }

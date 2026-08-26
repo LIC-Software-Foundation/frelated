@@ -1,0 +1,15 @@
+node_modules
+.pnpm-store
+dist
+coverage
+.git
+.github
+.idea
+.vscode
+.claude
+tmp
+*.log
+.env
+apps/*/.env
+apps/*/src/.env
+

@@ -7,6 +7,10 @@
     "skipLibCheck": true,
     "jsx": "react-jsx",
     "types": ["react", "react-dom"],
+    "baseUrl": ".",
+    "paths": {
+      "@frelated/types": ["../../packages/types/src/index.ts"]
+    },
 
     /* Bundler mode */
     "moduleResolution": "Bundler",

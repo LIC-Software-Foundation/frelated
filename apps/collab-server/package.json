@@ -7,8 +7,8 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc && vite build",
-    "start": "vite",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
     "test": "vitest"
   },
   "dependencies": {
