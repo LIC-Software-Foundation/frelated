@@ -140,6 +140,41 @@ const ProjectEditor: React.FC<ProjectEditorProps> = ({
   );
   const [isDark, setIsDark] = useState(false);
   const [fontSize, setFontSize] = useState(15);
+  const [liveAccess, setLiveAccess] = useState<
+    'none' | 'viewer' | 'editor' | null
+  >(null);
+  const normalizedUserEmail = user.email.trim().toLowerCase();
+  const canEdit = liveAccess
+    ? liveAccess === 'editor'
+    : project.owner.trim().toLowerCase() === normalizedUserEmail ||
+      project.collaborators.some(
+        (collaborator) =>
+          collaborator.email?.trim().toLowerCase() === normalizedUserEmail &&
+          collaborator.status !== 'pending' &&
+          collaborator.role !== 'viewer',
+      );
+
+  useEffect(() => {
+    setLiveAccess(null);
+    const handleAccessChange = (event: Event) => {
+      const detail = (event as CustomEvent).detail as {
+        projectId?: string;
+        access?: 'none' | 'viewer' | 'editor';
+      };
+      if (detail.projectId === project.id && detail.access) {
+        setLiveAccess(detail.access);
+      }
+    };
+    window.addEventListener(
+      'frelated:collaboration-access-changed',
+      handleAccessChange,
+    );
+    return () =>
+      window.removeEventListener(
+        'frelated:collaboration-access-changed',
+        handleAccessChange,
+      );
+  }, [project.id]);
 
   // Apply theme changes without tearing down the WebSocket provider.
   // Previously isDark was in the main effect deps, which destroyed and
@@ -185,6 +220,8 @@ const ProjectEditor: React.FC<ProjectEditorProps> = ({
       basicSetup,
       latex(),
       cursorPresenceTheme,
+      EditorState.readOnly.of(!canEdit),
+      EditorView.editable.of(canEdit),
       // Theme is managed via Compartment so it can be swapped without
       // rebuilding the editor or the WebSocket provider.
       themeCompartment.of(isDark ? [oneDark] : []),
@@ -292,7 +329,7 @@ const ProjectEditor: React.FC<ProjectEditorProps> = ({
       doc.destroy();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [file.id, project.id, user.email, user.name]);
+  }, [canEdit, file.id, project.id, user.email, user.name]);
 
   return (
     <div

@@ -68,6 +68,12 @@ export function connectNotifications(collabUrl: string, token: string): void {
           };
           if (msg.type === 'notification') {
             addLocalNotification({ ...msg.data, read: false });
+          } else if (msg.type === 'access-changed') {
+            window.dispatchEvent(
+              new CustomEvent('frelated:collaboration-access-changed', {
+                detail: msg.data,
+              }),
+            );
           }
         } catch {
           // ignore malformed messages
