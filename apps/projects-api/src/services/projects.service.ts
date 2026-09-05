@@ -111,6 +111,25 @@ const defaultFiles = (projectName: string): ProjectFile[] => [
 
 const normalizeEmail = (email: string) => email.trim().toLowerCase();
 
+type CollaborationAccess = 'none' | 'viewer' | 'editor';
+
+const notifyAccessChange = (
+  projectId: string,
+  email: string,
+  access: CollaborationAccess,
+): void => {
+  fetch(`${env.collabServerUrl}/internal/access-change`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-sync-secret': env.authSecret,
+    },
+    body: JSON.stringify({ projectId, email: normalizeEmail(email), access }),
+  }).catch(() => {
+    // Non-blocking: persisted ACL remains authoritative for new connections.
+  });
+};
+
 const isApprovedCollaborator = (collaborator: { status?: string }) =>
   !collaborator.status || collaborator.status === 'approved';
 
@@ -481,6 +500,35 @@ export const projectsService = {
       collaborators: toStoredAcl(collaborators),
     });
 
+    const previousByEmail = new Map(
+      project.collaborators.map((collaborator) => [
+        normalizeEmail(collaborator.email),
+        collaborator,
+      ]),
+    );
+    const nextEmails = new Set(
+      collaborators.map((collaborator) => normalizeEmail(collaborator.email)),
+    );
+    for (const collaborator of collaborators) {
+      const email = normalizeEmail(collaborator.email);
+      const previous = previousByEmail.get(email);
+      if (
+        isApprovedCollaborator(collaborator) &&
+        (!previous ||
+          previous.role !== collaborator.role ||
+          previous.status !== collaborator.status)
+      ) {
+        notifyAccessChange(
+          projectId,
+          email,
+          collaborator.role === 'viewer' ? 'viewer' : 'editor',
+        );
+      }
+    }
+    for (const [email] of previousByEmail) {
+      if (!nextEmails.has(email)) notifyAccessChange(projectId, email, 'none');
+    }
+
     return {
       ...project,
       collaborators,
@@ -553,7 +601,18 @@ export const projectsService = {
     if (!updatedRow) {
       throw new Error('PROJECT_NOT_FOUND');
     }
-    return hydrateProjectFromMongo(updatedRow);
+    const updatedProject = await hydrateProjectFromMongo(updatedRow);
+    const collaborator = updatedProject.collaborators.find(
+      (entry) => entry.id === collaboratorId,
+    );
+    if (collaborator) {
+      notifyAccessChange(
+        projectId,
+        collaborator.email,
+        collaborator.role === 'viewer' ? 'viewer' : 'editor',
+      );
+    }
+    return updatedProject;
   },
 
   async removeCollaborator(
@@ -570,6 +629,9 @@ export const projectsService = {
       throw new Error('FORBIDDEN');
     }
 
+    const removedCollaborator = row.collaborators.find(
+      (collaborator) => collaborator.id === collaboratorId,
+    );
     const deleted = await mongoStore.deleteProjectCollaborator(
       projectId,
       collaboratorId,
@@ -585,7 +647,27 @@ export const projectsService = {
     if (!updatedRow) {
       throw new Error('PROJECT_NOT_FOUND');
     }
+    if (removedCollaborator) {
+      notifyAccessChange(projectId, removedCollaborator.email, 'none');
+    }
     return hydrateProjectFromMongo(updatedRow);
+  },
+
+  async getCollaborationAccess(
+    projectId: string,
+    email: string,
+  ): Promise<CollaborationAccess> {
+    ensureMongoProjectsConfigured();
+    const row = await mongoStore.findProjectById(projectId);
+    if (!row) return 'none';
+    if (normalizeEmail(row.ownerEmail) === normalizeEmail(email)) {
+      return 'editor';
+    }
+    const collaborator = row.collaborators.find(
+      (entry) => normalizeEmail(entry.email) === normalizeEmail(email),
+    );
+    if (!collaborator || !isApprovedCollaborator(collaborator)) return 'none';
+    return collaborator.role === 'viewer' ? 'viewer' : 'editor';
   },
 
   async syncFileContent(
