@@ -8,6 +8,24 @@ import { projectsService } from '../services/projects.service';
  * secret (AUTH_SECRET) sent in the X-Sync-Secret header.
  */
 export default async function internalRoutes(server: FastifyInstance) {
+  server.get(
+    '/projects/:projectId/collaboration-access',
+    async (request, reply) => {
+      const syncSecret = request.headers['x-sync-secret'];
+      if (!syncSecret || syncSecret !== env.authSecret) {
+        return reply.status(401).send({ message: 'Secret invalide.' });
+      }
+      const { projectId } = request.params as { projectId: string };
+      const { email } = request.query as { email?: string };
+      if (!email) return reply.status(400).send({ message: 'Email requis.' });
+      const access = await projectsService.getCollaborationAccess(
+        projectId,
+        email,
+      );
+      return { access };
+    },
+  );
+
   server.patch('/projects/:projectId/files/:fileId', async (request, reply) => {
     const syncSecret = request.headers['x-sync-secret'];
     if (!syncSecret || syncSecret !== env.authSecret) {

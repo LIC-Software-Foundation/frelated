@@ -1,7 +1,11 @@
 node_modules
+**/node_modules
 .pnpm-store
+**/.pnpm-store
 dist
+**/dist
 coverage
+**/coverage
 .git
 .github
 .idea
@@ -12,4 +16,3 @@ tmp
 .env
 apps/*/.env
 apps/*/src/.env
-
