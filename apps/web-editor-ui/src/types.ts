@@ -38,7 +38,16 @@ export interface LogEntry {
   file?: string;
 }
 
+export interface CompilationSettings {
+  mainFile: string;
+  engine: 'pdflatex' | 'xelatex' | 'lualatex';
+}
+
 export interface CompilationState {
+  revision?: number;
+  jobId?: string;
+  pdfJobId?: string;
+  settings?: CompilationSettings;
   status: CompilationStatus;
   pdfUrl?: string;
   logs: LogEntry[];

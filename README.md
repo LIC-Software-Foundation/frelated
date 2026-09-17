@@ -6,7 +6,7 @@
 
 ## Architecture
 
-Monorepo **pnpm workspaces** composé de 4 applications :
+Monorepo **pnpm workspaces** composé de 4 applications et d’un worker de compilation :
 
 | App                      | Port   | Rôle                                             |
 | ------------------------ | ------ | ------------------------------------------------ |
@@ -183,6 +183,10 @@ pnpm --filter @frelated/projects-api test
 ```
 
 ---
+
+## Compilation distribuée
+
+La compilation réelle utilise Redis/BullMQ et des workers LaTeX. Voir [la configuration et le fonctionnement](docs/Compilation.md).
 
 ## Fonctionnalités
 

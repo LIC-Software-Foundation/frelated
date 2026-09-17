@@ -35,6 +35,11 @@ import ProjectShareModal from './projects/ProjectShareModal';
 import { useToast } from './ui/ToastContext';
 import { useProjects } from '../hooks/useProjects';
 import { useCompilation } from '../hooks/useCompilation';
+import {
+  captureVisibleDraft,
+  readRecoveryDraft,
+  restoreRecoveryDraft,
+} from '../services/editorDraft';
 import { ProjectFile, ProjectWithFiles } from '../types';
 import { downloadProjectSources } from '../services/projectService';
 
@@ -186,9 +191,27 @@ interface TreeCreationState {
 }
 
 interface TreeImportState {
-  importType: 'tex' | 'image';
+  importType: 'tex' | 'image' | 'folder';
   parentFolderId?: string;
   parentLabel: string;
+}
+
+interface DirectoryFileHandle {
+  kind: 'file';
+  name: string;
+  getFile: () => Promise<File>;
+}
+
+interface DirectoryFolderHandle {
+  kind: 'directory';
+  name: string;
+  values: () => AsyncIterableIterator<
+    DirectoryFileHandle | DirectoryFolderHandle
+  >;
+}
+
+interface DirectoryPickerWindow extends Window {
+  showDirectoryPicker?: () => Promise<DirectoryFolderHandle>;
 }
 
 // ─── Reusable sub-components ──────────────────────────────────────────────────
@@ -265,7 +288,6 @@ const Dashboard: React.FC<DashboardProps> = ({
   // ── Layout / UI mode ──
   const [layoutMode, setLayoutMode] = useState<LayoutMode>('code');
   const [logsOpen, setLogsOpen] = useState(false);
-  const hasAutoSwitchedRef = useRef(false); // switch to split on first success
 
   // ── Modal / form state ──
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -276,6 +298,10 @@ const Dashboard: React.FC<DashboardProps> = ({
     null,
   );
   const [importState, setImportState] = useState<TreeImportState | null>(null);
+  const [folderImportOpen, setFolderImportOpen] = useState(false);
+  const [folderImportProgress, setFolderImportProgress] = useState<
+    number | null
+  >(null);
   const [projectToShare, setProjectToShare] = useState<ProjectWithFiles | null>(
     null,
   );
@@ -297,12 +323,11 @@ const Dashboard: React.FC<DashboardProps> = ({
   );
   const texImportInputRef = useRef<HTMLInputElement | null>(null);
   const imageImportInputRef = useRef<HTMLInputElement | null>(null);
+  const folderImportInputRef = useRef<HTMLInputElement | null>(null);
   const pendingContentSaveRef = useRef<number | null>(null);
-  const pendingContentDraftRef = useRef<{
-    projectId: string;
-    fileId: string;
-    content: string;
-  } | null>(null);
+  const pendingContentDraftsRef = useRef(
+    new Map<string, { projectId: string; fileId: string; content: string }>(),
+  );
   const saveChainRef = useRef(Promise.resolve());
 
   // ── Derived state ──
@@ -368,18 +393,10 @@ const Dashboard: React.FC<DashboardProps> = ({
     (l) => l.level === 'warning',
   ).length;
 
-  // Auto-switch layout and open logs based on compilation result
   useEffect(() => {
-    if (compilation.status === 'success') {
-      if (!hasAutoSwitchedRef.current) {
-        hasAutoSwitchedRef.current = true;
-        setLayoutMode('split');
-      }
-    }
-    if (compilation.status === 'error') {
+    if (compilation.status === 'compiling' || compilation.logs.length > 0)
       setLogsOpen(true);
-    }
-  }, [compilation.status]);
+  }, [compilation.status, compilation.logs.length]);
 
   // ── Effects ──
   useEffect(() => {
@@ -487,55 +504,116 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   // ── Memoized callbacks ──
   const flushPendingContentSave = useCallback(() => {
-    const draft = pendingContentDraftRef.current;
-
-    if (!draft) {
-      return saveChainRef.current;
-    }
-
+    const drafts = [...pendingContentDraftsRef.current.values()];
+    if (!drafts.length) return saveChainRef.current;
     if (pendingContentSaveRef.current !== null) {
       window.clearTimeout(pendingContentSaveRef.current);
       pendingContentSaveRef.current = null;
     }
-
-    pendingContentDraftRef.current = null;
-
+    pendingContentDraftsRef.current.clear();
     saveChainRef.current = saveChainRef.current
       .catch(() => undefined)
-      .then(() =>
-        saveFileContent(draft.projectId, draft.fileId, draft.content).catch(
-          (error) => {
-            console.error('Echec de sauvegarde du fichier', error);
-          },
-        ),
-      );
-
+      .then(async () => {
+        let failure: unknown;
+        for (const draft of drafts) {
+          try {
+            await saveFileContent(draft.projectId, draft.fileId, draft.content);
+          } catch (error) {
+            const key = `${draft.projectId}/${draft.fileId}`;
+            if (!pendingContentDraftsRef.current.has(key))
+              pendingContentDraftsRef.current.set(key, draft);
+            failure = error;
+          }
+        }
+        if (failure) throw failure;
+      });
     return saveChainRef.current;
   }, [saveFileContent]);
 
   useEffect(
     () => () => {
-      void flushPendingContentSave();
+      void flushPendingContentSave().catch(console.error);
     },
     [flushPendingContentSave, selectedProject?.id, selectedFile?.id],
   );
 
+  const { compile, reportError } = compilation;
+  const compileRequestsRef = useRef(Promise.resolve());
+  const runCompilation = useCallback(
+    (onlyIfChanged = false, showSplit = false) => {
+      const visibleContent = captureVisibleDraft();
+      if (visibleContent !== undefined && selectedProject && selectedFile) {
+        pendingContentDraftsRef.current.set(
+          `${selectedProject.id}/${selectedFile.id}`,
+          {
+            projectId: selectedProject.id,
+            fileId: selectedFile.id,
+            content: visibleContent,
+          },
+        );
+      }
+      if (showSplit) setLayoutMode('split');
+      compileRequestsRef.current = compileRequestsRef.current
+        .catch(() => undefined)
+        .then(async () => {
+          try {
+            await flushPendingContentSave();
+            await compile(onlyIfChanged);
+          } catch (error) {
+            reportError(error);
+          }
+        });
+      return compileRequestsRef.current;
+    },
+    [
+      flushPendingContentSave,
+      compile,
+      reportError,
+      selectedProject,
+      selectedFile,
+    ],
+  );
+
+  useEffect(() => {
+    const save = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+        event.preventDefault();
+        event.stopPropagation();
+        void runCompilation();
+      }
+    };
+    window.addEventListener('keydown', save, true);
+    return () => window.removeEventListener('keydown', save, true);
+  }, [runCompilation]);
+
+  const mainFileOptions = useMemo(() => {
+    const paths: string[] = [];
+    const visit = (files: ProjectFile[], parent = '') => {
+      for (const file of files) {
+        const path = parent + file.name;
+        if (file.type === 'folder') visit(file.children ?? [], path + '/');
+        else if (file.name.endsWith('.tex')) paths.push(path);
+      }
+    };
+    visit(selectedProject?.files ?? []);
+    return paths;
+  }, [selectedProject?.files]);
+
   const handleContentChange = useCallback(
     (fileId: string, content: string) => {
       if (!selectedProject) return;
-
-      pendingContentDraftRef.current = {
+      pendingContentDraftsRef.current.set(`${selectedProject.id}/${fileId}`, {
         projectId: selectedProject.id,
         fileId,
         content,
-      };
+      });
 
       if (pendingContentSaveRef.current !== null) {
         window.clearTimeout(pendingContentSaveRef.current);
       }
 
       pendingContentSaveRef.current = window.setTimeout(() => {
-        void flushPendingContentSave();
+        void flushPendingContentSave().catch(console.error);
       }, 500);
     },
     [flushPendingContentSave, selectedProject],
@@ -590,7 +668,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     const project = projects.find((p) => p.id === projectId);
     setSelectedProjectId(projectId);
     setSelectedFileId(getFirstSelectableFileId(project?.files ?? []));
-    hasAutoSwitchedRef.current = false; // reset auto-switch for new project
+    // reset auto-switch for new project
     navigate(`/editor/${projectId}`);
   };
 
@@ -693,7 +771,7 @@ const Dashboard: React.FC<DashboardProps> = ({
   };
 
   const handleRequestImport = (
-    importType: 'tex' | 'image',
+    importType: 'tex' | 'image' | 'folder',
     parentFolderId?: string,
     parentLabel = 'la racine du projet',
   ) => {
@@ -704,7 +782,12 @@ const Dashboard: React.FC<DashboardProps> = ({
       return;
     }
 
-    imageImportInputRef.current?.click();
+    if (importType === 'image') {
+      imageImportInputRef.current?.click();
+      return;
+    }
+
+    setFolderImportOpen(true);
   };
 
   const readTextFile = (file: File) =>
@@ -767,6 +850,172 @@ const Dashboard: React.FC<DashboardProps> = ({
     } finally {
       setImportState(null);
     }
+  };
+
+  const importFolderFiles = async (
+    importedFiles: Array<{ file: File; path: string }>,
+  ) => {
+    if (!selectedProject || !importState || !importedFiles.length) return;
+
+    try {
+      setFolderImportProgress(0);
+      const createdAt = new Date().toISOString();
+      const roots: ProjectFile[] = [];
+      const folders = new Map<string, ProjectFile[]>();
+
+      for (const [index, imported] of importedFiles.entries()) {
+        const importedFile = imported.file;
+        const relativePath = imported.path;
+        const parts = relativePath.split('/').filter(Boolean);
+        const fileName = parts.pop();
+        if (!fileName) continue;
+
+        let children = roots;
+        let folderPath = '';
+        for (const folderName of parts) {
+          folderPath = folderPath ? `${folderPath}/${folderName}` : folderName;
+          let folderChildren = folders.get(folderPath);
+          if (!folderChildren) {
+            folderChildren = [];
+            children.push({
+              id: crypto.randomUUID(),
+              name: folderName,
+              type: 'folder',
+              children: folderChildren,
+              createdAt,
+            });
+            folders.set(folderPath, folderChildren);
+          }
+          children = folderChildren;
+        }
+
+        const extension = fileName.split('.').pop()?.toLowerCase();
+        const isBinary =
+          importedFile.type.startsWith('image/') || extension === 'pdf';
+        children.push({
+          id: crypto.randomUUID(),
+          name: fileName,
+          type: extension === 'bib' ? 'bib' : isBinary ? 'image' : 'tex',
+          content: isBinary
+            ? await readImageFile(importedFile)
+            : await readTextFile(importedFile),
+          createdAt,
+        });
+        setFolderImportProgress(
+          Math.round(((index + 1) / importedFiles.length) * 75),
+        );
+      }
+
+      let nextFiles = selectedProject.files;
+      for (const root of roots) {
+        nextFiles = insertIntoFolder(
+          nextFiles,
+          importState.parentFolderId,
+          root,
+        );
+      }
+      setFolderImportProgress(85);
+      await updateSelectedProjectFiles(nextFiles);
+      setFolderImportProgress(100);
+      toast(
+        `${importedFiles.length} fichier(s) importé(s) dans ${importState.parentLabel}.`,
+        'success',
+      );
+    } catch (error) {
+      console.error(error);
+      toast("Impossible d'importer ce dossier.", 'error');
+    } finally {
+      setFolderImportOpen(false);
+      setFolderImportProgress(null);
+      setImportState(null);
+    }
+  };
+
+  const handleImportedFolder = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const importedFiles = Array.from(event.target.files ?? []).map((file) => ({
+      file,
+      path: file.webkitRelativePath || file.name,
+    }));
+    event.target.value = '';
+    await importFolderFiles(importedFiles);
+  };
+
+  const collectDirectoryHandle = async (
+    directory: DirectoryFolderHandle,
+    parent: string,
+  ): Promise<Array<{ file: File; path: string }>> => {
+    const files: Array<{ file: File; path: string }> = [];
+    for await (const entry of directory.values()) {
+      const path = `${parent}/${entry.name}`;
+      if (entry.kind === 'file') {
+        files.push({ file: await entry.getFile(), path });
+      } else {
+        files.push(...(await collectDirectoryHandle(entry, path)));
+      }
+    }
+    return files;
+  };
+
+  const handleChooseFolder = async () => {
+    const picker = (window as DirectoryPickerWindow).showDirectoryPicker;
+    if (!picker) {
+      folderImportInputRef.current?.click();
+      return;
+    }
+
+    try {
+      const directory = await picker();
+      setFolderImportProgress(0);
+      const files = await collectDirectoryHandle(directory, directory.name);
+      await importFolderFiles(files);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
+      console.error(error);
+      setFolderImportProgress(null);
+      toast("Impossible d'importer ce dossier.", 'error');
+    }
+  };
+
+  const collectDroppedEntry = async (
+    entry: FileSystemEntry,
+    parent = '',
+  ): Promise<Array<{ file: File; path: string }>> => {
+    const path = parent ? `${parent}/${entry.name}` : entry.name;
+    if (entry.isFile) {
+      const file = await new Promise<File>((resolve, reject) =>
+        (entry as FileSystemFileEntry).file(resolve, reject),
+      );
+      return [{ file, path }];
+    }
+    const reader = (entry as FileSystemDirectoryEntry).createReader();
+    const children: FileSystemEntry[] = [];
+    for (;;) {
+      const batch = await new Promise<FileSystemEntry[]>((resolve, reject) =>
+        reader.readEntries(resolve, reject),
+      );
+      if (!batch.length) break;
+      children.push(...batch);
+    }
+    return (
+      await Promise.all(
+        children.map((child) => collectDroppedEntry(child, path)),
+      )
+    ).flat();
+  };
+
+  const handleFolderDrop = async (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const entries = Array.from(event.dataTransfer.items)
+      .map((item) => item.webkitGetAsEntry?.())
+      .filter((entry): entry is FileSystemEntry => Boolean(entry));
+    if (!entries.length) return;
+    setFolderImportProgress(0);
+    const files = (
+      await Promise.all(entries.map((entry) => collectDroppedEntry(entry)))
+    ).flat();
+    await importFolderFiles(files);
   };
 
   const handleStartRenameNode = (nodeId: string) => {
@@ -951,6 +1200,13 @@ const Dashboard: React.FC<DashboardProps> = ({
             handleRequestImport('image', node.id, `le dossier ${node.name}`),
         },
         {
+          id: 'import-folder',
+          label: 'Importer un dossier',
+          icon: FolderPlus,
+          onClick: () =>
+            handleRequestImport('folder', node.id, `le dossier ${node.name}`),
+        },
+        {
           id: 'rename-folder',
           label: 'Renommer',
           icon: Pencil,
@@ -1132,6 +1388,64 @@ const Dashboard: React.FC<DashboardProps> = ({
 
         {/* Right controls */}
         <div className="ml-auto flex items-center gap-2">
+          <select
+            aria-label="Fichier principal"
+            title="Fichier principal du projet"
+            className="max-w-32 bg-slate-800 text-slate-200 border border-slate-700 rounded text-xs p-1"
+            value={compilation.settings?.mainFile ?? 'main.tex'}
+            onChange={(event) =>
+              void compilation.saveSettings({
+                mainFile: event.target.value,
+                engine: compilation.settings?.engine ?? 'pdflatex',
+              })
+            }
+          >
+            {!mainFileOptions.includes(
+              compilation.settings?.mainFile ?? 'main.tex',
+            ) && (
+              <option value={compilation.settings?.mainFile ?? 'main.tex'}>
+                Choisir le fichier principal
+              </option>
+            )}
+            {mainFileOptions.map((path) => (
+              <option key={path} value={path}>
+                {path}
+              </option>
+            ))}
+          </select>
+          <select
+            aria-label="Moteur LaTeX"
+            className="bg-slate-800 text-slate-200 border border-slate-700 rounded text-xs p-1"
+            value={compilation.settings?.engine ?? 'pdflatex'}
+            onChange={(event) =>
+              void compilation.saveSettings({
+                mainFile: compilation.settings?.mainFile ?? 'main.tex',
+                engine: event.target.value as
+                  | 'pdflatex'
+                  | 'xelatex'
+                  | 'lualatex',
+              })
+            }
+          >
+            <option value="pdflatex">pdfLaTeX</option>
+            <option value="xelatex">XeLaTeX</option>
+            <option value="lualatex">LuaLaTeX</option>
+          </select>
+          {selectedFile?.type === 'tex' &&
+            !selectedFile.content &&
+            readRecoveryDraft() && (
+              <button
+                className="text-xs text-amber-200 border border-amber-500 rounded px-2 py-1"
+                onClick={() => {
+                  setLayoutMode('split');
+                  window.setTimeout(() => {
+                    if (restoreRecoveryDraft()) void runCompilation();
+                  }, 100);
+                }}
+              >
+                Restaurer le texte de cet onglet
+              </button>
+            )}
           {/* Layout switcher */}
           <div className="hidden sm:flex items-center rounded border border-slate-700 overflow-hidden">
             <button
@@ -1149,7 +1463,10 @@ const Dashboard: React.FC<DashboardProps> = ({
               Split
             </button>
             <button
-              onClick={() => setLayoutMode('pdf')}
+              onClick={() => {
+                setLayoutMode('pdf');
+                void runCompilation(true);
+              }}
               className={layoutBtnCls('pdf')}
               title="Aperçu seul"
             >
@@ -1208,7 +1525,7 @@ const Dashboard: React.FC<DashboardProps> = ({
 
           {/* Compile button */}
           <button
-            onClick={compilation.compile}
+            onClick={() => void runCompilation(false, true)}
             disabled={isCompiling}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-800 disabled:text-emerald-300 text-white font-semibold transition-colors"
           >
@@ -1346,6 +1663,12 @@ const Dashboard: React.FC<DashboardProps> = ({
                       label: 'Importer une image',
                       icon: FileImage,
                       onClick: () => handleRequestImport('image'),
+                    },
+                    {
+                      id: 'root-import-folder',
+                      label: 'Importer un dossier',
+                      icon: FolderPlus,
+                      onClick: () => handleRequestImport('folder'),
                     },
                   ]}
                 />
@@ -1515,7 +1838,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                   projectName={selectedProject?.name ?? ''}
                   compiledAt={compilation.compiledAt}
                   durationMs={compilation.durationMs}
-                  onRecompile={compilation.compile}
+                  onRecompile={() => void runCompilation(false, true)}
                   onClose={() => setLayoutMode('code')}
                 />
               </div>
@@ -1615,6 +1938,72 @@ const Dashboard: React.FC<DashboardProps> = ({
         className="hidden"
         onChange={(event) => void handleImportedFile(event, 'image')}
       />
+      <input
+        ref={(element) => {
+          folderImportInputRef.current = element;
+          element?.setAttribute('webkitdirectory', '');
+          element?.setAttribute('directory', '');
+        }}
+        type="file"
+        multiple
+        className="hidden"
+        onChange={(event) => void handleImportedFolder(event)}
+      />
+
+      <Modal
+        isOpen={folderImportOpen}
+        title="Importer un dossier"
+        onClose={() => {
+          if (folderImportProgress === null) {
+            setFolderImportOpen(false);
+            setImportState(null);
+          }
+        }}
+      >
+        <div
+          className="rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 px-6 py-8 text-center transition-colors hover:border-emerald-500 hover:bg-emerald-50/40"
+          onDragOver={(event) => event.preventDefault()}
+          onDrop={(event) => void handleFolderDrop(event)}
+        >
+          <FolderPlus className="mx-auto mb-3 h-9 w-9 text-emerald-600" />
+          {folderImportProgress === null ? (
+            <>
+              <p className="text-sm font-semibold text-slate-700">
+                Glissez votre dossier ici
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                L&apos;arborescence, les images et les fichiers seront
+                conservés.
+              </p>
+              <button
+                type="button"
+                className="mt-4 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+                onClick={() => void handleChooseFolder()}
+              >
+                Choisir un dossier
+              </button>
+            </>
+          ) : (
+            <div className="space-y-3">
+              <Loader2 className="mx-auto h-7 w-7 animate-spin text-emerald-600" />
+              <p className="text-sm font-medium text-slate-700">
+                {folderImportProgress < 80
+                  ? 'Lecture des fichiers…'
+                  : 'Envoi du dossier…'}
+              </p>
+              <div className="h-2 overflow-hidden rounded-full bg-slate-200">
+                <div
+                  className="h-full rounded-full bg-emerald-500 transition-all duration-200"
+                  style={{ width: `${folderImportProgress}%` }}
+                />
+              </div>
+              <p className="text-xs tabular-nums text-slate-500">
+                {folderImportProgress}%
+              </p>
+            </div>
+          )}
+        </div>
+      </Modal>
 
       <Modal
         isOpen={Boolean(creationState)}

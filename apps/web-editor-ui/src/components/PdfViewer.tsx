@@ -1,4 +1,6 @@
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
+
+const PdfDocument = lazy(() => import('./PdfDocument'));
 import {
   AlertCircle,
   Download,
@@ -19,81 +21,6 @@ const formatTime = (iso: string): string =>
     minute: '2-digit',
     second: '2-digit',
   });
-
-// ─── Mock PDF Placeholder ─────────────────────────────────────────────────────
-// Renders an A4-like document skeleton when the real PDF is not yet available.
-// Remove this component once the backend returns a real pdfUrl.
-
-const CONTENT_LINE_WIDTHS = [
-  100, 92, 100, 78, 100, 88, 100, 65, 100, 95, 82, 100, 74, 100,
-];
-
-const MockPdfDocument: React.FC<{ projectName: string }> = ({
-  projectName,
-}) => (
-  <div
-    className="bg-white shadow-2xl flex-shrink-0"
-    style={{ width: '595px', minHeight: '842px' }}
-    aria-label="Aperçu du document compilé"
-  >
-    {/* Header area */}
-    <div className="px-20 pt-16 pb-10">
-      <div className="text-center mb-10 space-y-2">
-        <div className="h-5 w-72 bg-slate-300 rounded mx-auto" />
-        <div className="h-3 w-36 bg-slate-200 rounded mx-auto" />
-        <div className="h-3 w-44 bg-slate-200 rounded mx-auto" />
-      </div>
-
-      {/* Abstract-like block */}
-      <div className="border border-slate-100 rounded px-6 py-5 mb-8 space-y-1.5">
-        <div className="h-2.5 w-20 bg-slate-300 rounded mb-3" />
-        {[88, 100, 93, 76].map((w, i) => (
-          <div
-            key={i}
-            className="h-2 rounded bg-slate-100"
-            style={{ width: `${w}%` }}
-          />
-        ))}
-      </div>
-
-      {/* Section 1 */}
-      <div className="mb-6">
-        <div className="h-3.5 w-40 bg-slate-300 rounded mb-4" />
-        <div className="space-y-1.5">
-          {CONTENT_LINE_WIDTHS.map((w, i) => (
-            <div
-              key={i}
-              className="h-2 rounded"
-              style={{ width: `${w}%`, backgroundColor: '#e2e8f0' }}
-            />
-          ))}
-        </div>
-      </div>
-
-      {/* Section 2 */}
-      <div className="mb-6">
-        <div className="h-3.5 w-52 bg-slate-300 rounded mb-4" />
-        <div className="space-y-1.5">
-          {[100, 85, 100, 90, 100, 72].map((w, i) => (
-            <div
-              key={i}
-              className="h-2 rounded"
-              style={{ width: `${w}%`, backgroundColor: '#e2e8f0' }}
-            />
-          ))}
-        </div>
-      </div>
-    </div>
-
-    {/* Footer */}
-    <div className="px-20 pb-8 mt-auto">
-      <div className="border-t border-slate-200 pt-4 flex justify-between items-center">
-        <span className="text-[10px] text-slate-400">{projectName}</span>
-        <span className="text-[10px] text-slate-400">1</span>
-      </div>
-    </div>
-  </div>
-);
 
 // ─── State screens ────────────────────────────────────────────────────────────
 
@@ -179,7 +106,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
   onRecompile,
   onClose,
 }) => {
-  const [zoom, setZoom] = useState(100);
+  const [zoom, setZoom] = useState(147);
 
   return (
     <div className="flex flex-col h-full bg-slate-200">
@@ -191,7 +118,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
         </span>
 
         {/* Center: zoom (only visible when PDF is rendered) */}
-        {status === 'success' && (
+        {pdfUrl && (
           <div className="flex items-center gap-1">
             <button
               onClick={() => setZoom((z) => Math.max(50, z - 10))}
@@ -249,32 +176,35 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
         </div>
       </div>
 
+      {pdfUrl && status === 'compiling' && (
+        <p role="status" className="px-3 py-1 text-xs text-slate-600">
+          Compilation en cours… Dernier PDF réussi affiché.
+        </p>
+      )}
+      {pdfUrl && status === 'error' && (
+        <p role="alert" className="px-3 py-1 text-xs text-red-700">
+          Échec de compilation. Dernier PDF réussi conservé ; consultez les
+          logs.
+        </p>
+      )}
       {/* ── Content area ── */}
-      <div className="flex-1 overflow-auto flex items-start justify-center py-6 px-4">
-        {status === 'idle' && <IdleScreen onCompile={onRecompile} />}
-        {status === 'compiling' && <CompilingScreen />}
-        {status === 'error' && <ErrorScreen onRecompile={onRecompile} />}
+      <div className="flex-1 min-h-0 overflow-auto flex items-start justify-center">
+        {status === 'idle' && !pdfUrl && <IdleScreen onCompile={onRecompile} />}
+        {status === 'compiling' && !pdfUrl && <CompilingScreen />}
+        {status === 'error' && !pdfUrl && (
+          <ErrorScreen onRecompile={onRecompile} />
+        )}
 
-        {status === 'success' && (
-          <div
-            style={{
-              transform: `scale(${zoom / 100})`,
-              transformOrigin: 'top center',
-              // Compensate layout shift from scale so the container still scrolls correctly
-              marginBottom: `${(zoom / 100 - 1) * 842}px`,
-            }}
+        {pdfUrl && (
+          <Suspense
+            fallback={
+              <p role="status" className="p-4 text-sm text-slate-500">
+                Chargement du PDF…
+              </p>
+            }
           >
-            {pdfUrl ? (
-              <iframe
-                src={pdfUrl}
-                title="Aperçu PDF"
-                className="shadow-2xl bg-white"
-                style={{ width: '595px', height: '842px', border: 'none' }}
-              />
-            ) : (
-              <MockPdfDocument projectName={projectName} />
-            )}
-          </div>
+            <PdfDocument url={pdfUrl} zoom={zoom} />
+          </Suspense>
         )}
       </div>
 

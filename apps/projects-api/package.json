@@ -15,7 +15,8 @@
     "prisma:generate": "prisma generate --schema prisma/schema.prisma --no-engine",
     "prisma:seed": "tsx prisma/seed.ts",
     "export:openapi": "tsx src/tools/export-openapi.ts",
-    "generate:client": "pnpm export:openapi && openapi-generator-cli generate -i openapi.json -g typescript-fetch -o ../../packages/projects-api-client/src"
+    "generate:client": "pnpm export:openapi && openapi-generator-cli generate -i openapi.json -g typescript-fetch -o ../../packages/projects-api-client/src",
+    "worker": "tsx src/compilation/worker.ts"
   },
   "dependencies": {
     "@fastify/swagger": "^9.5.1",
@@ -29,7 +30,10 @@
     "pg": "^8.11.3",
     "reflect-metadata": "^0.1.13",
     "typeorm": "^0.3.20",
-    "zod": "^3.22.0"
+    "zod": "3.25.76",
+    "bullmq": "5.81.5",
+    "ioredis": "5.11.1",
+    "@fastify/websocket": "^11.2.0"
   },
   "devDependencies": {
     "@openapitools/openapi-generator-cli": "^2.23.4",
@@ -37,7 +41,8 @@
     "prisma": "^6.16.2",
     "tsx": "^4.0.0",
     "typescript": "^5.4.0",
-    "vitest": "^1.5.0"
+    "vitest": "^1.5.0",
+    "@types/ws": "^8.18.1"
   },
   "packageManager": "pnpm@10.16.1"
 }

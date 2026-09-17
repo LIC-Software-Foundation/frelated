@@ -2,6 +2,9 @@
 
 ## Services
 
+- `redis` : file BullMQ, paramètres et derniers résultats chiffrés
+- `compilation-worker` : latexmk, pdfLaTeX, XeLaTeX, LuaLaTeX et BibTeX/Biber
+
 - `mysql` : base Prisma pour les utilisateurs, projets SQL et collaborateurs
 - `mongodb` : stockage des projets et fichiers chiffrés
 - `projects-api` : API Fastify sur le port `3000`
@@ -40,3 +43,5 @@ Par defaut, les ports publies ont ete decales pour eviter les conflits locaux:
 - API : `http://localhost:3000`
 - Swagger : `http://localhost:3000/docs`
 - Collaboration : `ws://localhost:8080`
+
+Voir [Compilation](Compilation.md) pour répliquer les workers et configurer les limites.

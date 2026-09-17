@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { removeCompilation } from '../compilation/queue';
 import { z } from 'zod';
 import { env } from '../config/env';
 import { createSeedStore } from '../data/seed';
@@ -85,12 +86,12 @@ const accessSharedProjectSchema = z.object({
   projectId: z.string(),
 });
 
-const defaultFiles = (projectName: string): ProjectFile[] => [
+const defaultFiles = (): ProjectFile[] => [
   {
     id: randomUUID(),
     name: 'main.tex',
     type: 'tex',
-    content: `\\section{${projectName}}\nVotre contenu ici.`,
+    content: `\\documentclass{article}\n\\usepackage{lmodern}\n\\usepackage[T1]{fontenc}\n\\usepackage[utf8]{inputenc}\n\\begin{document}\nVotre contenu ici.\n\\end{document}\n`,
     createdAt: new Date().toISOString(),
   },
   {
@@ -246,6 +247,23 @@ const hydrateProjectFromMongo = async (
 });
 
 export const projectsService = {
+  async getCompilationProject(
+    requester: ApiUser,
+    projectId: string,
+    edit = false,
+  ): Promise<ProjectRecord> {
+    ensureMongoProjectsConfigured();
+    const row = await mongoStore.findProjectById(projectId);
+    if (!row) throw new Error('PROJECT_NOT_FOUND');
+    const project = await hydrateProjectFromMongo(row);
+    if (
+      !(edit
+        ? canEditProject(project, requester)
+        : canReadProject(project, requester))
+    )
+      throw new Error('FORBIDDEN');
+    return project;
+  },
   async listProjects(requester: ApiUser, ownerEmail?: string) {
     await ensureMongoSeedProjects();
     const rows = await mongoStore.listProjects(
@@ -343,7 +361,7 @@ export const projectsService = {
           isOnline: false,
         },
       ],
-      files: payload.files?.length ? payload.files : defaultFiles(payload.name),
+      files: payload.files?.length ? payload.files : defaultFiles(),
       imported: payload.imported,
       hasTexFile: payload.hasTexFile ?? true,
     };
@@ -379,6 +397,14 @@ export const projectsService = {
     }
 
     await mongoStore.deleteProject(projectId);
+    if (process.env.REDIS_URL) {
+      await removeCompilation(projectId).catch((error) =>
+        console.warn(
+          'Nettoyage du cache de compilation différé:',
+          error.message,
+        ),
+      );
+    }
   },
 
   async renameProject(

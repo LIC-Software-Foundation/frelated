@@ -1,0 +1,15 @@
+{
+  "name": "@frelated/compilation-worker",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/compilation/worker.ts"
+  },
+  "dependencies": {
+    "bullmq": "5.81.5",
+    "ioredis": "5.11.1",
+    "tsx": "4.20.5",
+    "zod": "3.25.76"
+  }
+}

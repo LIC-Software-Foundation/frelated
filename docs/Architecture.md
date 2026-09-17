@@ -104,12 +104,12 @@ Les hooks (`useProjects`, `useCompilation`) ne dependent que de ces contrats et 
 
 ## Limites actuelles
 
-- La compilation PDF reste mockee cote frontend.
+- La compilation PDF utilise Redis/BullMQ, des workers latexmk et des notifications WebSocket via l’API. Voir [Compilation](Compilation.md).
 - La verification fine des droits projet dans le `collab-server` peut encore etre renforcee avec un collab token scope par projet/fichier.
 
 ## Prochaines evolutions recommandees
 
 1. Ajouter un collab token scope par projet/fichier.
 2. Ajouter une vraie gestion des invitations/permissions de partage dans l'UI.
-3. Deplacer la compilation LaTeX dans un service backend dedie.
+3. Renforcer l’isolation par job avant un déploiement public du compilateur.
 4. Ajouter migrations SQL et observabilite backend.

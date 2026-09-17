@@ -43,7 +43,9 @@ const LogLine: React.FC<{ entry: LogEntry }> = ({ entry }) => {
     <div className="flex items-start gap-2 py-0.5">
       {cfg.icon}
       <div className="flex-1 min-w-0">
-        <span className={`${cfg.text} break-all leading-relaxed`}>
+        <span
+          className={`${cfg.text} whitespace-pre-wrap break-words leading-relaxed`}
+        >
           {entry.message}
         </span>
         {(entry.file ?? entry.line) && (

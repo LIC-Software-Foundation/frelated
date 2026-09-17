@@ -2,7 +2,7 @@ import { clearApiSession, readApiSession } from './sessionStorage';
 
 const normalizeBaseUrl = (value: string) => value.replace(/\/+$/, '');
 
-const API_BASE_URL = normalizeBaseUrl(
+export const API_BASE_URL = normalizeBaseUrl(
   import.meta.env.VITE_PROJECTS_API_URL?.trim() || '/api',
 );
 

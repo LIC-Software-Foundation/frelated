@@ -6,6 +6,7 @@ import {
   restoreSession,
 } from './authService';
 import { compileProject } from './compilationService';
+import { compilationApiService } from './api/compilationApiService';
 import { authApiService } from './api/authApiService';
 import { projectsApiService } from './api/projectsApiService';
 import {
@@ -59,9 +60,7 @@ const createMockServices = (): AppServices => ({
 const createApiReadyServices = (): AppServices => ({
   auth: authApiService,
   projects: projectsApiService,
-  compilation: {
-    compileProject,
-  },
+  compilation: compilationApiService,
 });
 
 export const appServices: AppServices =
