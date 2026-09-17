@@ -1,4 +1,6 @@
 import Fastify from 'fastify';
+import websocket from '@fastify/websocket';
+import compilationRoutes from './routes/compilation';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
 import corsPlugin from './plugins/cors';
@@ -9,8 +11,11 @@ import projectsRoutes from './routes/projects';
 import internalRoutes from './routes/internal';
 
 export async function buildServer() {
-  const server = Fastify({ logger: true });
+  // Project files may contain up to 20 MiB of binary data. Base64 and JSON add
+  // overhead, so the HTTP envelope must be larger than the project limit.
+  const server = Fastify({ logger: true, bodyLimit: 30 * 1024 * 1024 });
 
+  await server.register(websocket, { options: { maxPayload: 8192 } });
   await server.register(corsPlugin);
   await server.register(authPlugin);
 
@@ -30,6 +35,7 @@ export async function buildServer() {
   await server.register(healthRoutes, { prefix: '/health' });
   await server.register(authRoutes, { prefix: '/auth' });
   await server.register(projectsRoutes, { prefix: '/projects' });
+  await server.register(compilationRoutes, { prefix: '/projects' });
   await server.register(internalRoutes, { prefix: '/internal' });
 
   return server;

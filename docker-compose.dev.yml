@@ -1,0 +1,39 @@
+# Requires pnpm install on the host. Reuses the application images for Node 22
+# while loading current source and dependencies from the workspace.
+services:
+  projects-api:
+    working_dir: /workspace/apps/projects-api
+    volumes:
+      - .:/workspace
+    command:
+      ['/workspace/apps/projects-api/node_modules/.bin/tsx', 'src/index.ts']
+    environment:
+      PRISMA_AUTO_MIGRATE: 'false'
+
+  collab-server:
+    working_dir: /workspace/apps/collab-server
+    volumes:
+      - .:/workspace
+    command:
+      ['/workspace/apps/collab-server/node_modules/.bin/tsx', 'src/index.ts']
+
+  web-editor-ui:
+    # Node 22 is already in the projects-api image. The normal UI image is nginx.
+    image: frelated-projects-api
+    working_dir: /workspace/apps/web-editor-ui
+    volumes:
+      - .:/workspace
+    entrypoint: []
+    command:
+      [
+        '/workspace/apps/web-editor-ui/node_modules/.bin/vite',
+        '--host',
+        '0.0.0.0',
+        '--port',
+        '80',
+      ]
+    environment:
+      VITE_SERVICE_MODE: api
+      VITE_PROJECTS_API_URL: /api
+      VITE_PROJECTS_API_PROXY_TARGET: http://projects-api:3000
+      VITE_COLLAB_SERVER_URL: ${COLLAB_SERVER_PUBLIC_URL:-ws://localhost:8080}

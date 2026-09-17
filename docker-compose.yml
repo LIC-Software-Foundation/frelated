@@ -1,4 +1,52 @@
 services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command:
+      [
+        'redis-server',
+        '--appendonly',
+        'yes',
+        '--maxmemory-policy',
+        'noeviction',
+      ]
+    networks:
+      - frelated-network
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  compilation-worker:
+    build:
+      context: .
+      dockerfile: apps/compilation-worker/Dockerfile
+    restart: unless-stopped
+    init: true
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    cap_add: [SETUID, SETGID, CHOWN, DAC_OVERRIDE]
+    mem_limit: 768m
+    cpus: 1
+    pids_limit: 128
+    tmpfs:
+      - /tmp:size=384m,mode=1777
+    networks:
+      - frelated-network
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      REDIS_URL: redis://redis:6379
+      AUTH_SECRET: ${AUTH_SECRET}
+      DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY}
+      COMPILATION_TIMEOUT_MS: ${COMPILATION_TIMEOUT_MS:-120000}
+
   mysql:
     image: mysql:8.4
     restart: unless-stopped
@@ -54,6 +102,8 @@ services:
     networks:
       - frelated-network
     depends_on:
+      redis:
+        condition: service_healthy
       mysql:
         condition: service_healthy
       mongodb:
@@ -70,6 +120,7 @@ services:
       DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY}
       FRONTEND_ORIGIN: ${FRONTEND_ORIGIN}
       COLLAB_SERVER_URL: http://collab-server:8080
+      REDIS_URL: redis://redis:6379
       PRISMA_AUTO_MIGRATE: ${PRISMA_AUTO_MIGRATE:-true}
     ports:
       - '${PROJECTS_API_PORT:-3000}:3000'
@@ -152,6 +203,7 @@ services:
       - '${WEB_MONITORING_UI_PORT:-5174}:80'
 
 volumes:
+  redis_data:
   mysql_data:
   mongo_data:
   collab_store:

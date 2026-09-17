@@ -114,3 +114,7 @@ Network Trash Folder
 Temporary Items
 .apdisk
 .store
+
+# Browser test artifacts
+playwright-report/
+test-results/

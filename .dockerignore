@@ -16,3 +16,4 @@ tmp
 .env
 apps/*/.env
 apps/*/src/.env
+.env.docker
