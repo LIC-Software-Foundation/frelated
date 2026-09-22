@@ -14,7 +14,7 @@ import type { Snapshot, CompilationResult } from './model';
 
 export async function compileSnapshot(
   snapshot: Snapshot,
-): Promise<{ result: CompilationResult; pdf?: string }> {
+): Promise<{ result: CompilationResult; pdf?: string; synctex?: string }> {
   const started = Date.now();
   const work = await mkdtemp(path.join(tmpdir(), 'frelated-tex-'));
   const output = path.join(work, 'output');
@@ -51,7 +51,7 @@ export async function compileSnapshot(
       lualatex: '-lualatex',
     }[engine];
     // Never load a project's latexmkrc (Perl code) or honor first-line engine options.
-    const command = `${engine} -no-shell-escape -no-parse-first-line ${engine === 'lualatex' ? '--safer --nosocket ' : ''}%O %S`;
+    const command = `${engine} -synctex=1 -no-shell-escape -no-parse-first-line ${engine === 'lualatex' ? '--safer --nosocket ' : ''}%O %S`;
     const runLatex = (haltOnError: boolean) =>
       new Promise<number>((resolve, reject) => {
         const child = spawn(
@@ -151,6 +151,15 @@ export async function compileSnapshot(
       throw new Error('PDF invalide.');
     if (code !== 0 && !recoverableErrorsTolerated)
       throw new Error('Échec de compilation LaTeX.');
+    const outputStem = path.basename(
+      snapshot.settings.mainFile,
+      path.extname(snapshot.settings.mainFile),
+    );
+    const synctexPath = path.join(output, `${outputStem}.synctex.gz`);
+    if ((await stat(synctexPath)).size > 10 * 1024 * 1024) {
+      throw new Error('Index SyncTeX trop volumineux (10 Mo maximum).');
+    }
+    const synctex = await readFile(synctexPath);
     return {
       result: {
         status: 'success',
@@ -170,6 +179,7 @@ export async function compileSnapshot(
         durationMs: Date.now() - started,
       },
       pdf: pdf.toString('base64'),
+      synctex: synctex.toString('base64'),
     };
   } catch (error) {
     return {

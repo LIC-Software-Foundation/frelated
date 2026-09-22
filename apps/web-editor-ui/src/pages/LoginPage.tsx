@@ -1,5 +1,5 @@
 import { FormEvent, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   BookOpen,
   Mail,
@@ -11,14 +11,29 @@ import {
 } from 'lucide-react';
 import type { LoginPayload } from '../services/auth.types';
 import { Button, Input } from '../components/ui';
+import {
+  authPageWithReturnPath,
+  safeAuthReturnPath,
+} from '../services/authReturnPath';
 
 interface LoginPageProps {
   onLogin: (payload: LoginPayload) => Promise<void>;
   isSubmitting: boolean;
+  successPath?: string;
+  description?: string;
 }
 
-const LoginPage: React.FC<LoginPageProps> = ({ onLogin, isSubmitting }) => {
+const LoginPage: React.FC<LoginPageProps> = ({
+  onLogin,
+  isSubmitting,
+  successPath,
+  description = 'Connectez-vous pour accéder à vos projets.',
+}) => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const returnPath = safeAuthReturnPath(
+    successPath ?? searchParams.get('returnTo'),
+  );
   const [form, setForm] = useState({ email: '', password: '' });
   const [error, setError] = useState<string | null>(null);
   const [showPwd, setShowPwd] = useState(false);
@@ -28,7 +43,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, isSubmitting }) => {
     setError(null);
     try {
       await onLogin(form);
-      navigate('/projects');
+      navigate(returnPath, { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Connexion impossible.');
     }
@@ -125,9 +140,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, isSubmitting }) => {
               <h1 className="text-[22px] font-extrabold text-slate-900 tracking-tight">
                 Bon retour 👋
               </h1>
-              <p className="mt-1.5 text-[14px] text-slate-500">
-                Connectez-vous pour accéder à vos projets.
-              </p>
+              <p className="mt-1.5 text-[14px] text-slate-500">{description}</p>
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -208,7 +221,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, isSubmitting }) => {
             <p className="mt-6 text-center text-[13px] text-slate-500">
               Pas encore de compte ?{' '}
               <Link
-                to="/register"
+                to={authPageWithReturnPath('/register', returnPath)}
                 className="font-semibold text-[#2d6a4f] hover:text-[#245a41] transition-colors"
               >
                 Créer un compte

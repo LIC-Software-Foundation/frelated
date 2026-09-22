@@ -4,8 +4,12 @@ import { env } from '../config/env.js';
 import { getRequestUrl } from '../http/request.js';
 
 export interface TokenPayload {
+  kind?: 'user' | 'guest';
   sub: string;
   email: string;
+  guestInvitationId?: string;
+  projectId?: string;
+  name?: string;
   exp: number;
 }
 
@@ -35,6 +39,15 @@ export const verifyToken = (token: string): TokenPayload | null => {
     const payload = JSON.parse(
       Buffer.from(encodedPayload, 'base64url').toString(),
     ) as TokenPayload;
+    if (
+      typeof payload.sub !== 'string' ||
+      typeof payload.email !== 'string' ||
+      typeof payload.exp !== 'number' ||
+      (payload.kind === 'guest' &&
+        (!payload.guestInvitationId || !payload.projectId))
+    ) {
+      return null;
+    }
     return payload.exp > Math.floor(Date.now() / 1000) ? payload : null;
   } catch {
     return null;

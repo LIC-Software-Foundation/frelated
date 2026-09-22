@@ -5,6 +5,8 @@ export type CollaborationAccess = 'none' | 'viewer' | 'editor';
 export interface CollaborationConnection {
   ws: WebSocket;
   email: string;
+  principalKind: 'user' | 'guest';
+  principalId: string;
   projectId: string;
   access: Exclude<CollaborationAccess, 'none'>;
 }

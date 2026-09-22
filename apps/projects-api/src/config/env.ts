@@ -80,6 +80,39 @@ export const env = {
   dataEncryptionKey: process.env.DATA_ENCRYPTION_KEY || '',
   frontendOrigin: process.env.FRONTEND_ORIGIN || '*',
   collabServerUrl: process.env.COLLAB_SERVER_URL || 'http://localhost:8080',
+  appPublicUrl: process.env.APP_PUBLIC_URL || 'http://localhost:5173',
+  guestInvitationTtlHours: Math.max(
+    1,
+    Number(process.env.GUEST_INVITATION_TTL_HOURS) || 168,
+  ),
+  projectMaxGuestInvitations: Math.max(
+    1,
+    Number(process.env.PROJECT_MAX_GUEST_INVITATIONS) || 10,
+  ),
+  guestSessionTtlHours: Math.max(
+    1,
+    Number(process.env.GUEST_SESSION_TTL_HOURS) || 12,
+  ),
+  joinLinkTtlHours: Math.max(
+    1,
+    Number(process.env.PROJECT_JOIN_LINK_TTL_HOURS) || 168,
+  ),
+  projectMaxParticipants: Math.max(
+    0,
+    Number(process.env.PROJECT_MAX_PARTICIPANTS) || 0,
+  ),
+  smtpHost: process.env.SMTP_HOST || '',
+  smtpPort: Number(process.env.SMTP_PORT) || 1025,
+  smtpSecure: process.env.SMTP_SECURE === 'true',
+  smtpUser: process.env.SMTP_USER || '',
+  smtpPass: process.env.SMTP_PASS || '',
+  smtpFrom: process.env.SMTP_FROM || 'Frelated <no-reply@frelated.local>',
+  proofreadingProvider: process.env.PROOFREADING_PROVIDER || 'languagetool',
+  languageToolUrl:
+    process.env.LANGUAGETOOL_URL || 'http://localhost:8010/v2/check',
+  languageToolApiKey: process.env.LANGUAGETOOL_API_KEY || '',
+  proofreadingDefaultLanguage:
+    process.env.PROOFREADING_DEFAULT_LANGUAGE || 'fr',
   prismaSchemaPath:
     process.env.PRISMA_SCHEMA_PATH ||
     path.join(APP_DIR, 'prisma/schema.prisma'),

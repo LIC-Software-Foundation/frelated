@@ -15,12 +15,13 @@ interface AuthApiResponse {
 
 export const authApiService: AuthServiceContract = {
   getSessionUser() {
-    return readApiSession()?.user || null;
+    const session = readApiSession();
+    return session?.kind === 'user' ? session.user : null;
   },
 
   async restoreSession() {
     const session = readApiSession();
-    if (!session) {
+    if (!session || session.kind !== 'user') {
       return null;
     }
 

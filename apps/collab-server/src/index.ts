@@ -6,6 +6,7 @@ import {
 } from 'y-websocket/bin/utils';
 import {
   asPermissionFilteredSocket,
+  applyCollaborationAccessChange,
   collaborationConnections,
   getCollaborationAccess,
 } from './collaboration/access.js';
@@ -18,7 +19,10 @@ import {
   persistRoomState,
 } from './collaboration/rooms.js';
 import { syncContentToProjectsApi } from './collaboration/sync.js';
-import type { CollaborationAccess } from './collaboration/types.js';
+import type {
+  CollaborationAccess,
+  CollaborationConnection,
+} from './collaboration/types.js';
 import { env } from './config/env.js';
 import {
   applyCorsHeaders,
@@ -67,7 +71,7 @@ const handleRoomPreparation = async (
   const ids = parseRoomIds(roomName);
   if (!ids)
     return sendJson(response, 400, { message: 'Nom de room invalide.' });
-  const access = await getCollaborationAccess(ids.projectId, payload.email);
+  const access = await getCollaborationAccess(ids.projectId, payload);
   if (access === 'none') {
     return sendJson(response, 403, { message: 'Acces au projet refuse.' });
   }
@@ -113,34 +117,37 @@ const handleAccessChange = async (
   }
   try {
     const change = await readJsonBody<{
+      kind?: 'user' | 'guest';
       projectId?: string;
       email?: string;
+      principalId?: string;
       access?: unknown;
     }>(request);
     if (
       !change.projectId ||
-      !change.email ||
+      (change.kind === 'guest' ? !change.principalId : !change.email) ||
       !isCollaborationAccess(change.access)
     ) {
       return sendJson(response, 400, { message: 'Invalid body' });
     }
-    let updated = 0;
-    for (const connection of collaborationConnections) {
-      if (
-        connection.projectId === change.projectId &&
-        connection.email.toLowerCase() === change.email.toLowerCase()
-      ) {
-        updated += 1;
-        if (change.access === 'none') {
-          connection.ws.close(4003, 'Project access revoked');
-        } else {
-          connection.access = change.access;
-        }
-      }
-    }
-    const notificationClient = notificationClients.get(
-      change.email.toLowerCase(),
+    const updated = applyCollaborationAccessChange(
+      change.kind === 'guest'
+        ? {
+            kind: 'guest',
+            projectId: change.projectId,
+            principalId: change.principalId!,
+            access: change.access,
+          }
+        : {
+            kind: 'user',
+            projectId: change.projectId,
+            email: change.email!,
+            access: change.access,
+          },
     );
+    const notificationClient = change.email
+      ? notificationClients.get(change.email.toLowerCase())
+      : undefined;
     if (notificationClient?.readyState === WebSocket.OPEN) {
       notificationClient.send(
         JSON.stringify({
@@ -203,16 +210,21 @@ const subscribeToRoom = async (ws: WebSocket, request: IncomingMessage) => {
   const ids = parseRoomIds(roomName);
   const payload = authenticateRequest(request);
   if (!ids || !payload) return ws.close(4001, 'Invalid collaboration room');
-  const access = await getCollaborationAccess(ids.projectId, payload.email);
+  const access = await getCollaborationAccess(ids.projectId, payload);
   if (access === 'none') return ws.close(4003, 'Project access denied');
 
   const room = await ensureRoom(roomName);
   room.connectionCount += 1;
   room.lastActivity = new Date();
   const doc = getSharedYDoc(roomName, true);
-  const connection = {
+  const connection: CollaborationConnection = {
     ws,
     email: payload.email,
+    principalKind: payload.kind === 'guest' ? 'guest' : 'user',
+    principalId:
+      payload.kind === 'guest'
+        ? (payload.guestInvitationId ?? payload.sub)
+        : payload.sub,
     projectId: ids.projectId,
     access,
   };

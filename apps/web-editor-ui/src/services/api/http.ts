@@ -42,17 +42,17 @@ export async function apiFetch<T>(
     );
   }
 
-  if (response.status === 401) {
-    clearApiSession();
-    // Notify the app immediately so the user is redirected to login
-    // without needing to refresh manually.
-    window.dispatchEvent(new Event('frelated:session-expired'));
-  }
-
   if (!response.ok) {
     const errorBody = (await response.json().catch(() => null)) as {
       message?: string;
     } | null;
+    if (
+      response.status === 401 ||
+      (response.status === 403 && session?.kind === 'guest')
+    ) {
+      clearApiSession();
+      window.dispatchEvent(new Event('frelated:session-expired'));
+    }
     throw new Error(errorBody?.message || 'Requete API echouee.');
   }
 

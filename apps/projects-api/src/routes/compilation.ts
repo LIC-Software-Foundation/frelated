@@ -1,12 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { WebSocket } from 'ws';
 import type { Redis } from 'ioredis';
 import { z } from 'zod';
 import { projectsService } from '../services/projects.service';
-import { verifyToken } from '../services/tokens';
-import { authService } from '../services/auth.service';
-import type { ApiUser } from '../domain/models';
+import type { AuthPrincipal } from '../domain/models';
+import { resolveTokenPrincipal } from '../services/principals';
 import {
   createCompilationQueue,
   decode,
@@ -20,6 +19,11 @@ import {
   settingsSchema,
   type CompilationResult,
 } from '../compilation/model';
+import {
+  inverseSearch,
+  sourceSearch,
+  type SyncArtifact,
+} from '../compilation/synctex';
 
 export default async function compilationRoutes(server: FastifyInstance) {
   let resources: ReturnType<typeof createCompilationQueue> | undefined;
@@ -45,7 +49,16 @@ export default async function compilationRoutes(server: FastifyInstance) {
     return resources;
   };
   const state = async (projectId: string) => {
-    const fields = ['result', 'status', 'jobId', 'revision', 'pdfJobId'];
+    const fields = [
+      'result',
+      'status',
+      'jobId',
+      'revision',
+      'pdfJobId',
+      'synctexJobId',
+      'hash',
+      'pdfHash',
+    ];
     const values = await get().connection.hmget(key(projectId), ...fields);
     const data = Object.fromEntries(
       fields.map((field, index) => [field, values[index]]),
@@ -59,19 +72,21 @@ export default async function compilationRoutes(server: FastifyInstance) {
       jobId: data.jobId ?? undefined,
       revision: Number(data.revision || 0),
       pdfJobId: data.pdfJobId ?? undefined,
+      synctexJobId: data.synctexJobId ?? undefined,
+      isPdfStale: Boolean(
+        data.pdfHash && data.hash && data.pdfHash !== data.hash,
+      ),
       settings: await readSettings(get().connection, projectId),
     };
   };
   const authorize = async (
     token: string,
     projectId: string,
-  ): Promise<ApiUser> => {
-    const payload = verifyToken(token);
-    if (!payload) throw new Error('FORBIDDEN');
-    const user = await authService.findUserByEmail(payload.email);
-    if (!user) throw new Error('FORBIDDEN');
-    await projectsService.getCompilationProject(user, projectId);
-    return user;
+  ): Promise<AuthPrincipal> => {
+    const principal = await resolveTokenPrincipal(token);
+    if (!principal) throw new Error('FORBIDDEN');
+    await projectsService.getCompilationProject(principal, projectId);
+    return principal;
   };
   const sendState = async (socket: WebSocket) => {
     const client = clients.get(socket);
@@ -153,7 +168,7 @@ export default async function compilationRoutes(server: FastifyInstance) {
     { preHandler: server.authenticate },
     async (request) => {
       await projectsService.getCompilationProject(
-        request.currentUser!,
+        request.currentPrincipal!,
         request.params.projectId,
       );
       return state(request.params.projectId);
@@ -164,7 +179,7 @@ export default async function compilationRoutes(server: FastifyInstance) {
     { preHandler: server.authenticate },
     async (request, reply) => {
       const project = await projectsService.getCompilationProject(
-        request.currentUser!,
+        request.currentPrincipal!,
         request.params.projectId,
         true,
       );
@@ -190,7 +205,7 @@ export default async function compilationRoutes(server: FastifyInstance) {
     async (request, reply) => {
       const projectId = request.params.projectId;
       const project = await projectsService.getCompilationProject(
-        request.currentUser!,
+        request.currentPrincipal!,
         projectId,
         true,
       );
@@ -293,7 +308,7 @@ export default async function compilationRoutes(server: FastifyInstance) {
     async (request, reply) => {
       const projectId = request.params.projectId;
       await projectsService.getCompilationProject(
-        request.currentUser!,
+        request.currentPrincipal!,
         projectId,
       );
       const pdf = await get().connection.hget(key(projectId), 'pdf');
@@ -305,6 +320,169 @@ export default async function compilationRoutes(server: FastifyInstance) {
       return reply
         .type('application/pdf')
         .send(Buffer.from(decode<string>(pdf, projectId), 'base64'));
+    },
+  );
+
+  const readSyncArtifact = async (
+    projectId: string,
+  ): Promise<SyncArtifact | null> => {
+    const fields = [
+      'pdf',
+      'pdfJobId',
+      'pdfHash',
+      'synctex',
+      'synctexJobId',
+      'synctexHash',
+      'synctexSnapshot',
+      'hash',
+    ];
+    const values = await get().connection.hmget(key(projectId), ...fields);
+    const data = Object.fromEntries(
+      fields.map((field, index) => [field, values[index]]),
+    );
+    if (
+      !data.pdf ||
+      !data.synctex ||
+      !data.synctexSnapshot ||
+      !data.synctexHash ||
+      !data.pdfJobId ||
+      data.pdfJobId !== data.synctexJobId ||
+      data.pdfHash !== data.synctexHash
+    ) {
+      return null;
+    }
+    return {
+      jobId: data.pdfJobId,
+      pdf: decode<string>(data.pdf, projectId),
+      synctex: decode<string>(data.synctex, projectId),
+      snapshot: decode(data.synctexSnapshot, projectId),
+      hash: data.synctexHash,
+      stale: Boolean(data.hash && data.pdfHash !== data.hash),
+    };
+  };
+
+  const sendSyncError = (reply: FastifyReply, error: unknown) => {
+    const code = error instanceof Error ? error.message : '';
+    if (code === 'INVALID_SYNC_PATH') {
+      return reply
+        .code(400)
+        .send({ message: 'Chemin source SyncTeX invalide.' });
+    }
+    if (code === 'SYNC_SOURCE_NOT_FOUND') {
+      return reply.code(404).send({
+        message: 'Ce fichier ne faisait pas partie de la dernière compilation.',
+      });
+    }
+    if (code === 'SYNCTEX_NO_RESULT' || code.startsWith('SYNCTEX_FAILED:')) {
+      return reply.code(422).send({
+        message:
+          'Aucune zone de texte synchronisable n’a été trouvée près de cette position.',
+      });
+    }
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+      return reply.code(503).send({
+        message: 'Le moteur SyncTeX est indisponible sur le serveur.',
+      });
+    }
+    server.log.error(error);
+    return reply
+      .code(500)
+      .send({ message: 'La synchronisation SyncTeX a échoué.' });
+  };
+
+  const requireDisplayedArtifact = (
+    reply: FastifyReply,
+    artifact: SyncArtifact | null,
+    displayedJobId: string,
+  ) => {
+    if (!artifact) {
+      reply.code(404).send({
+        message:
+          'Aucun index SyncTeX n’est disponible. Relancez la compilation.',
+      });
+      return null;
+    }
+    if (artifact.jobId !== displayedJobId) {
+      reply.code(409).send({
+        message:
+          'Un nouveau PDF est prêt. Attendez son affichage puis recommencez la synchronisation.',
+      });
+      return null;
+    }
+    return artifact;
+  };
+
+  server.get<{ Params: { projectId: string } }>(
+    '/:projectId/compilation/sync/source',
+    { preHandler: server.authenticate },
+    async (request, reply) => {
+      const projectId = request.params.projectId;
+      const project = await projectsService.getCompilationProject(
+        request.currentPrincipal!,
+        projectId,
+      );
+      const query = z
+        .object({
+          file: z.string().min(1).max(240),
+          line: z.coerce.number().int().min(1).max(10_000_000),
+          column: z.coerce.number().int().min(0).max(1_000_000).default(0),
+          pdfJobId: z.string().uuid(),
+        })
+        .parse(request.query);
+      const artifact = requireDisplayedArtifact(
+        reply,
+        await readSyncArtifact(projectId),
+        query.pdfJobId,
+      );
+      if (!artifact) return;
+      try {
+        const target = await sourceSearch(artifact, query);
+        const stale =
+          artifact.stale ||
+          fingerprint(
+            makeSnapshot(project.files, artifact.snapshot.settings),
+          ) !== artifact.hash;
+        return { ...target, pdfJobId: artifact.jobId, stale };
+      } catch (error) {
+        return sendSyncError(reply, error);
+      }
+    },
+  );
+
+  server.get<{ Params: { projectId: string } }>(
+    '/:projectId/compilation/sync/pdf',
+    { preHandler: server.authenticate },
+    async (request, reply) => {
+      const projectId = request.params.projectId;
+      const project = await projectsService.getCompilationProject(
+        request.currentPrincipal!,
+        projectId,
+      );
+      const query = z
+        .object({
+          page: z.coerce.number().int().min(1).max(100_000),
+          x: z.coerce.number().finite().min(0).max(1_000_000),
+          y: z.coerce.number().finite().min(0).max(1_000_000),
+          pdfJobId: z.string().uuid(),
+        })
+        .parse(request.query);
+      const artifact = requireDisplayedArtifact(
+        reply,
+        await readSyncArtifact(projectId),
+        query.pdfJobId,
+      );
+      if (!artifact) return;
+      try {
+        const source = await inverseSearch(artifact, query);
+        const stale =
+          artifact.stale ||
+          fingerprint(
+            makeSnapshot(project.files, artifact.snapshot.settings),
+          ) !== artifact.hash;
+        return { ...source, pdfJobId: artifact.jobId, stale };
+      } catch (error) {
+        return sendSyncError(reply, error);
+      }
     },
   );
 }

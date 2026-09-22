@@ -6,6 +6,7 @@ import {
   Navigate,
   useNavigate,
   useParams,
+  useSearchParams,
 } from 'react-router-dom';
 
 import type { User } from '@frelated/types';
@@ -17,6 +18,9 @@ import {
   disconnectNotifications,
 } from './services/notificationService';
 import { readApiSession } from './services/api/sessionStorage';
+import { writeGuestApiSession } from './services/api/sessionStorage';
+import { guestAccessApiService } from './services/api/guestAccessApiService';
+import { safeAuthReturnPath } from './services/authReturnPath';
 
 const COLLAB_URL =
   (import.meta.env.VITE_COLLAB_SERVER_URL as string | undefined) ||
@@ -37,6 +41,13 @@ const RequireAuth: React.FC<{
 }> = ({ user, children }) =>
   user ? <>{children}</> : <Navigate to="/login" replace />;
 
+const ReturnAfterAuth: React.FC = () => {
+  const [searchParams] = useSearchParams();
+  return (
+    <Navigate to={safeAuthReturnPath(searchParams.get('returnTo'))} replace />
+  );
+};
+
 // ─── Editor route ──────────────────────────────────────────────────────────────
 
 interface EditorRouteProps {
@@ -46,6 +57,129 @@ interface EditorRouteProps {
 const EditorRoute: React.FC<EditorRouteProps> = ({ user }) => {
   const { projectId } = useParams<{ projectId: string }>();
   return <Dashboard user={user} initialProjectId={projectId} />;
+};
+
+const GuestInvitationRoute: React.FC = () => {
+  const { token } = useParams<{ token: string }>();
+  const navigate = useNavigate();
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!token) {
+      setError("Lien d'invitation invalide.");
+      return;
+    }
+    let active = true;
+    void guestAccessApiService
+      .redeemInvitation(token)
+      .then((session) => {
+        if (!active) return;
+        writeGuestApiSession({
+          kind: 'guest',
+          token: session.token,
+          principal: session.principal,
+        });
+        navigate(`/guest/projects/${session.projectId}`, { replace: true });
+      })
+      .catch((cause: unknown) => {
+        if (active) {
+          setError(
+            cause instanceof Error
+              ? cause.message
+              : "Cette invitation n'est plus valide.",
+          );
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [navigate, token]);
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-slate-50 p-6">
+      <p role={error ? 'alert' : 'status'} className="text-sm text-slate-700">
+        {error || "Validation de l'invitation…"}
+      </p>
+    </div>
+  );
+};
+
+const GuestProjectRoute: React.FC = () => {
+  const { projectId } = useParams<{ projectId: string }>();
+  const [revision, setRevision] = useState(0);
+  useEffect(() => {
+    const expired = () => setRevision((value) => value + 1);
+    window.addEventListener('frelated:session-expired', expired);
+    return () =>
+      window.removeEventListener('frelated:session-expired', expired);
+  }, []);
+  const session = readApiSession();
+  void revision;
+  if (
+    !projectId ||
+    session?.kind !== 'guest' ||
+    session.principal.projectId !== projectId
+  ) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 p-6">
+        <p role="alert" className="text-sm text-red-700">
+          Cette session invitée est absente, expirée ou révoquée.
+        </p>
+      </div>
+    );
+  }
+  return <Dashboard user={session.principal} initialProjectId={projectId} />;
+};
+
+const JoinProjectRoute: React.FC<SharedEntryProps> = ({
+  user,
+  isSubmitting,
+  onLogin,
+}) => {
+  const { token } = useParams<{ token: string }>();
+  const navigate = useNavigate();
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!user || !token) return;
+    let active = true;
+    void guestAccessApiService
+      .redeemJoinLink(token)
+      .then(({ project }) => {
+        if (active) navigate(`/editor/${project.id}`, { replace: true });
+      })
+      .catch((cause: unknown) => {
+        if (active) {
+          setError(
+            cause instanceof Error ? cause.message : 'Lien invalide ou expiré.',
+          );
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [navigate, token, user]);
+
+  if (!user) {
+    const returnPath = token
+      ? `/join/${encodeURIComponent(token)}`
+      : '/projects';
+    return (
+      <LoginPage
+        onLogin={onLogin}
+        isSubmitting={isSubmitting}
+        successPath={returnPath}
+        description="Connectez-vous ou créez un compte pour rejoindre ce projet."
+      />
+    );
+  }
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-slate-50 p-6">
+      <p role={error ? 'alert' : 'status'} className="text-sm text-slate-700">
+        {error || 'Ajout au projet…'}
+      </p>
+    </div>
+  );
 };
 
 // ─── Shared project (access via /project/:ownerEmail/:projectId) ───────────────
@@ -65,21 +199,22 @@ const SharedProjectRoute: React.FC<SharedEntryProps> = ({
     ownerEmail: string;
     projectId: string;
   }>();
-  const navigate = useNavigate();
-
   if (user) {
     return (
       <Dashboard user={user} owner={ownerEmail} initialProjectId={projectId} />
     );
   }
 
+  const returnPath =
+    ownerEmail && projectId
+      ? `/project/${encodeURIComponent(ownerEmail)}/${encodeURIComponent(projectId)}`
+      : '/projects';
   return (
     <LoginPage
-      onLogin={async (payload) => {
-        await onLogin(payload);
-        navigate(`/project/${ownerEmail}/${projectId}`);
-      }}
+      onLogin={onLogin}
       isSubmitting={isSubmitting}
+      successPath={returnPath}
+      description="Connectez-vous ou créez un compte pour accéder à ce projet partagé."
     />
   );
 };
@@ -218,7 +353,7 @@ function App() {
             path="/login"
             element={
               user ? (
-                <Navigate to="/projects" replace />
+                <ReturnAfterAuth />
               ) : (
                 <LoginPage onLogin={handleLogin} isSubmitting={isSubmitting} />
               )
@@ -228,7 +363,7 @@ function App() {
             path="/register"
             element={
               user ? (
-                <Navigate to="/projects" replace />
+                <ReturnAfterAuth />
               ) : (
                 <RegisterPage
                   onRegister={handleRegister}
@@ -261,6 +396,24 @@ function App() {
             path="/project/:ownerEmail/:projectId"
             element={
               <SharedProjectRoute
+                user={user}
+                isSubmitting={isSubmitting}
+                onLogin={handleLogin}
+              />
+            }
+          />
+          <Route
+            path="/guest/invitations/:token"
+            element={<GuestInvitationRoute />}
+          />
+          <Route
+            path="/guest/projects/:projectId"
+            element={<GuestProjectRoute />}
+          />
+          <Route
+            path="/join/:token"
+            element={
+              <JoinProjectRoute
                 user={user}
                 isSubmitting={isSubmitting}
                 onLogin={handleLogin}

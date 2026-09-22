@@ -41,7 +41,11 @@ export const useCompilation = (projectId: string) => {
       )
         return;
       latest.current = next;
-      setState({ ...next, pdfUrl: pdf.current.url });
+      setState({
+        ...next,
+        pdfUrl: pdf.current.url,
+        displayedPdfJobId: pdf.current.id,
+      });
       if (next.pdfJobId && next.pdfJobId !== pdf.current.id) {
         try {
           const url = await service.fetchPdf(id);
@@ -55,7 +59,11 @@ export const useCompilation = (projectId: string) => {
           }
           if (pdf.current.url) URL.revokeObjectURL(pdf.current.url);
           pdf.current = { id: next.pdfJobId, url };
-          setState((previous) => ({ ...previous, pdfUrl: url }));
+          setState((previous) => ({
+            ...previous,
+            pdfUrl: url,
+            displayedPdfJobId: next.pdfJobId,
+          }));
         } catch (error) {
           if (epoch === generation.current) reportError(error);
         }
@@ -100,10 +108,12 @@ export const useCompilation = (projectId: string) => {
           );
         submitting.current = true;
         const freshState: CompilationState = {
+          ...latest.current,
           status: 'compiling',
           logs: [],
           settings: latest.current.settings ?? initial.settings,
           pdfUrl: pdf.current.url,
+          displayedPdfJobId: pdf.current.id,
         };
         latest.current = freshState;
         setState(freshState);

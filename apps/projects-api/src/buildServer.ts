@@ -9,6 +9,9 @@ import authRoutes from './routes/auth';
 import healthRoutes from './routes/health';
 import projectsRoutes from './routes/projects';
 import internalRoutes from './routes/internal';
+import guestAccessRoutes from './routes/guestAccess';
+import proofreadingRoutes from './routes/proofreading';
+import notificationRoutes from './routes/notifications';
 
 export async function buildServer() {
   // Project files may contain up to 20 MiB of binary data. Base64 and JSON add
@@ -37,6 +40,9 @@ export async function buildServer() {
   await server.register(projectsRoutes, { prefix: '/projects' });
   await server.register(compilationRoutes, { prefix: '/projects' });
   await server.register(internalRoutes, { prefix: '/internal' });
+  await server.register(guestAccessRoutes);
+  await server.register(proofreadingRoutes);
+  await server.register(notificationRoutes);
 
   return server;
 }

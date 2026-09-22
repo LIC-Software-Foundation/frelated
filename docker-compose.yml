@@ -1,4 +1,21 @@
 services:
+  languagetool:
+    image: silviof/docker-languagetool:latest
+    restart: unless-stopped
+    networks:
+      - frelated-network
+    ports:
+      - '8010:8010'
+
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    restart: unless-stopped
+    networks:
+      - frelated-network
+    ports:
+      - '1025:1025'
+      - '8025:8025'
+
   redis:
     image: redis:7-alpine
     restart: unless-stopped
@@ -122,6 +139,22 @@ services:
       COLLAB_SERVER_URL: http://collab-server:8080
       REDIS_URL: redis://redis:6379
       PRISMA_AUTO_MIGRATE: ${PRISMA_AUTO_MIGRATE:-true}
+      APP_PUBLIC_URL: ${APP_PUBLIC_URL:-http://localhost:5173}
+      GUEST_INVITATION_TTL_HOURS: ${GUEST_INVITATION_TTL_HOURS:-168}
+      PROJECT_MAX_GUEST_INVITATIONS: ${PROJECT_MAX_GUEST_INVITATIONS:-10}
+      GUEST_SESSION_TTL_HOURS: ${GUEST_SESSION_TTL_HOURS:-12}
+      PROJECT_JOIN_LINK_TTL_HOURS: ${PROJECT_JOIN_LINK_TTL_HOURS:-168}
+      PROJECT_MAX_PARTICIPANTS: ${PROJECT_MAX_PARTICIPANTS:-0}
+      SMTP_HOST: ${SMTP_HOST:-mailhog}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-Frelated <no-reply@frelated.local>}
+      PROOFREADING_PROVIDER: ${PROOFREADING_PROVIDER:-languagetool}
+      LANGUAGETOOL_URL: ${LANGUAGETOOL_URL:-http://languagetool:8010/v2/check}
+      LANGUAGETOOL_API_KEY: ${LANGUAGETOOL_API_KEY:-}
+      PROOFREADING_DEFAULT_LANGUAGE: ${PROOFREADING_DEFAULT_LANGUAGE:-fr}
     ports:
       - '${PROJECTS_API_PORT:-3000}:3000'
     healthcheck:

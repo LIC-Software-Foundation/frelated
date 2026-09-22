@@ -1,12 +1,14 @@
 import fp from 'fastify-plugin';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { authService } from '../services/auth.service';
+import type { ApiUser, AuthPrincipal } from '../domain/models';
+import { resolveTokenPrincipal } from '../services/principals';
 import { verifyToken } from '../services/tokens';
-import type { ApiUser } from '../domain/models';
 
 declare module 'fastify' {
   interface FastifyRequest {
     currentUser: ApiUser | null;
+    currentPrincipal: AuthPrincipal | null;
   }
 
   interface FastifyInstance {
@@ -18,11 +20,16 @@ declare module 'fastify' {
       request: FastifyRequest,
       reply: FastifyReply,
     ) => Promise<ApiUser>;
+    requirePrincipal: (
+      request: FastifyRequest,
+      reply: FastifyReply,
+    ) => Promise<AuthPrincipal>;
   }
 }
 
 export default fp(async (server) => {
   server.decorateRequest('currentUser', null);
+  server.decorateRequest('currentPrincipal', null);
 
   server.decorate(
     'authenticate',
@@ -35,21 +42,23 @@ export default fp(async (server) => {
       }
 
       const token = authorization.replace('Bearer ', '').trim();
-      const payload = verifyToken(token);
-
-      if (!payload) {
-        reply.status(401).send({ message: 'Token invalide ou expire.' });
+      const principal = await resolveTokenPrincipal(token);
+      if (!principal) {
+        const signedPayload = verifyToken(token);
+        reply.status(signedPayload?.kind === 'guest' ? 403 : 401).send({
+          message:
+            signedPayload?.kind === 'guest'
+              ? 'Accès invité expiré ou révoqué.'
+              : 'Token invalide ou expire.',
+        });
         return;
       }
-
-      const user = await authService.findUserByEmail(payload.email);
-
-      if (!user) {
-        reply.status(401).send({ message: 'Utilisateur introuvable.' });
-        return;
+      request.currentPrincipal = principal;
+      if (principal.kind === 'user') {
+        request.currentUser = await authService.findUserByEmail(
+          principal.email,
+        );
       }
-
-      request.currentUser = user;
     },
   );
 
@@ -63,6 +72,15 @@ export default fp(async (server) => {
       }
 
       return request.currentUser;
+    },
+  );
+
+  server.decorate(
+    'requirePrincipal',
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      await server.authenticate(request, reply);
+      if (!request.currentPrincipal) throw new Error('UNAUTHENTICATED');
+      return request.currentPrincipal;
     },
   );
 });

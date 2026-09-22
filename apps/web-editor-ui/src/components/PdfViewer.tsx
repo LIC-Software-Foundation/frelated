@@ -12,6 +12,7 @@ import {
   X,
 } from 'lucide-react';
 import { CompilationStatus } from '../types';
+import type { PdfSyncTargetPosition } from '@frelated/types';
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
@@ -95,6 +96,9 @@ interface PdfViewerProps {
   durationMs?: number;
   onRecompile: () => void;
   onClose: () => void;
+  syncTarget?: PdfSyncTargetPosition;
+  onSyncToSource?: (position: { page: number; x: number; y: number }) => void;
+  isStale?: boolean;
 }
 
 const PdfViewer: React.FC<PdfViewerProps> = ({
@@ -105,6 +109,9 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
   durationMs,
   onRecompile,
   onClose,
+  syncTarget,
+  onSyncToSource,
+  isStale,
 }) => {
   const [zoom, setZoom] = useState(147);
 
@@ -187,6 +194,16 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
           logs.
         </p>
       )}
+      {syncTarget?.stale && (
+        <p role="status" className="px-3 py-1 text-xs text-amber-700">
+          Position issue de la dernière compilation réussie.
+        </p>
+      )}
+      {isStale && !syncTarget?.stale && (
+        <p role="status" className="px-3 py-1 text-xs text-amber-700">
+          Le document a changé depuis cette compilation.
+        </p>
+      )}
       {/* ── Content area ── */}
       <div className="flex-1 min-h-0 overflow-auto flex items-start justify-center">
         {status === 'idle' && !pdfUrl && <IdleScreen onCompile={onRecompile} />}
@@ -203,7 +220,12 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
               </p>
             }
           >
-            <PdfDocument url={pdfUrl} zoom={zoom} />
+            <PdfDocument
+              url={pdfUrl}
+              zoom={zoom}
+              syncTarget={syncTarget}
+              onSyncToSource={onSyncToSource}
+            />
           </Suspense>
         )}
       </div>

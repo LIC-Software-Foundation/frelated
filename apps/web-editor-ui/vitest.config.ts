@@ -13,7 +13,13 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom',
-    include: ['tests/compilation*.test.tsx'],
+    include: [
+      'tests/compilation*.test.tsx',
+      'tests/proofreading*.test.ts',
+      'tests/pdf-sync*.test.ts',
+      'tests/guest-access*.test.tsx',
+      'tests/toast*.test.tsx',
+    ],
     pool: 'forks',
     poolOptions: { forks: { singleFork: true } },
   },

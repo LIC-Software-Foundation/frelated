@@ -21,7 +21,12 @@ import {
   Trash2,
   Users,
 } from 'lucide-react';
-import { User, Collaborator } from '@frelated/types';
+import type {
+  Collaborator,
+  EditorIdentity,
+  PdfSyncSourcePosition,
+  PdfSyncTargetPosition,
+} from '@frelated/types';
 import { useNavigate } from 'react-router-dom';
 import ProjectEditor from './ProjectEditor';
 import CollaboratorsList from './CollaboratorsList';
@@ -42,13 +47,14 @@ import {
 } from '../services/editorDraft';
 import { ProjectFile, ProjectWithFiles } from '../types';
 import { downloadProjectSources } from '../services/projectService';
+import { compilationApiService } from '../services/api/compilationApiService';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type LayoutMode = 'code' | 'split' | 'pdf';
 
 interface DashboardProps {
-  user: User;
+  user: EditorIdentity;
   initialProjectId?: string;
   owner?: string;
 }
@@ -62,6 +68,38 @@ const findFileById = (
     if (file.id === id) return file;
     if (file.children) {
       const found = findFileById(file.children, id);
+      if (found) return found;
+    }
+  }
+  return undefined;
+};
+
+const findFileByPath = (
+  files: ProjectFile[],
+  requestedPath: string,
+  parent = '',
+): ProjectFile | undefined => {
+  for (const file of files) {
+    const filePath = parent ? `${parent}/${file.name}` : file.name;
+    if (filePath === requestedPath) return file;
+    if (file.children) {
+      const found = findFileByPath(file.children, requestedPath, filePath);
+      if (found) return found;
+    }
+  }
+  return undefined;
+};
+
+const findPathByFileId = (
+  files: ProjectFile[],
+  fileId: string,
+  parent = '',
+): string | undefined => {
+  for (const file of files) {
+    const filePath = parent ? `${parent}/${file.name}` : file.name;
+    if (file.id === fileId) return filePath;
+    if (file.children) {
+      const found = findPathByFileId(file.children, fileId, filePath);
       if (found) return found;
     }
   }
@@ -260,6 +298,7 @@ const Dashboard: React.FC<DashboardProps> = ({
   owner,
 }) => {
   const navigate = useNavigate();
+  const isGuest = 'kind' in user && user.kind === 'guest';
   const projectOwnerScope = owner;
   const isSharedProjectView = Boolean(owner && owner !== user.email);
   const {
@@ -314,7 +353,6 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [nodeRenameValue, setNodeRenameValue] = useState('');
   const [nodeToDelete, setNodeToDelete] = useState<ProjectFile | null>(null);
   const [collapsedFolderIds, setCollapsedFolderIds] = useState<string[]>([]);
-  const [linkCopied, setLinkCopied] = useState(false);
   const [isPendingApproval, setIsPendingApproval] = useState(false);
   const [confirmRemoveCollaboratorId, setConfirmRemoveCollaboratorId] =
     useState<string | null>(null);
@@ -329,6 +367,20 @@ const Dashboard: React.FC<DashboardProps> = ({
     new Map<string, { projectId: string; fileId: string; content: string }>(),
   );
   const saveChainRef = useRef(Promise.resolve());
+  const sourceSyncRequestRef = useRef(false);
+  const sourceSyncCompilationRef = useRef(false);
+  const sourceRevisionRef = useRef(0);
+  const pdfSyncRequestRef = useRef(false);
+  const [pdfSyncTarget, setPdfSyncTarget] = useState<PdfSyncTargetPosition>();
+  const [pendingSourceSync, setPendingSourceSync] =
+    useState<PdfSyncSourcePosition>();
+  const [pdfLocallyStale, setPdfLocallyStale] = useState(false);
+  const [revealPosition, setRevealPosition] = useState<{
+    file: string;
+    line: number;
+    column?: number;
+    requestId: number;
+  }>();
 
   // ── Derived state ──
   const selectedProject = useMemo(
@@ -375,16 +427,15 @@ const Dashboard: React.FC<DashboardProps> = ({
     return Array.from(merged.values());
   }, [liveCollaborators, selectedProject]);
 
-  const activeShareProject = projectToShare ?? selectedProject;
   const sharedProjectUnavailable =
     isSharedProjectView &&
     Boolean(initialProjectId) &&
     !projectsLoading &&
     !projects.some((project) => project.id === initialProjectId);
-  const shareOwner = owner ?? activeShareProject?.owner ?? user.email;
-  const shareLink = activeShareProject
-    ? `${window.location.origin}/project/${shareOwner}/${activeShareProject.id}`
-    : '';
+  const selectedFilePath =
+    selectedProject && selectedFile
+      ? findPathByFileId(selectedProject.files, selectedFile.id)
+      : undefined;
 
   // ── Compilation ──
   const compilation = useCompilation(selectedProject?.id ?? '');
@@ -397,6 +448,15 @@ const Dashboard: React.FC<DashboardProps> = ({
     if (compilation.status === 'compiling' || compilation.logs.length > 0)
       setLogsOpen(true);
   }, [compilation.status, compilation.logs.length]);
+
+  useEffect(() => {
+    if (
+      compilation.pdfJobId &&
+      compilation.pdfJobId === compilation.displayedPdfJobId
+    ) {
+      setPdfLocallyStale(false);
+    }
+  }, [compilation.displayedPdfJobId, compilation.pdfJobId]);
 
   // ── Effects ──
   useEffect(() => {
@@ -602,6 +662,13 @@ const Dashboard: React.FC<DashboardProps> = ({
   const handleContentChange = useCallback(
     (fileId: string, content: string) => {
       if (!selectedProject) return;
+      // A SyncTeX marker belongs to the exact source revision that produced
+      // it. Keeping it after an edit makes the PDF viewer scroll back to an
+      // obsolete location whenever React refreshes the editor state.
+      sourceRevisionRef.current += 1;
+      setPendingSourceSync(undefined);
+      setPdfSyncTarget(undefined);
+      setPdfLocallyStale(Boolean(compilation.pdfJobId));
       pendingContentDraftsRef.current.set(`${selectedProject.id}/${fileId}`, {
         projectId: selectedProject.id,
         fileId,
@@ -616,7 +683,7 @@ const Dashboard: React.FC<DashboardProps> = ({
         void flushPendingContentSave().catch(console.error);
       }, 500);
     },
-    [flushPendingContentSave, selectedProject],
+    [compilation.pdfJobId, flushPendingContentSave, selectedProject],
   );
 
   const onContentChange = useCallback(
@@ -1062,32 +1129,192 @@ const Dashboard: React.FC<DashboardProps> = ({
     setNodeToDelete(null);
   };
 
-  const handleCopyLink = async (nextShareLink = shareLink) => {
-    if (!nextShareLink) return;
-
-    try {
-      await navigator.clipboard.writeText(nextShareLink);
-      setLinkCopied(true);
-      window.setTimeout(() => setLinkCopied(false), 2000);
-    } catch (e) {
-      console.error(e);
-      toast('Impossible de copier le lien de partage.', 'error');
-    }
-  };
-
-  const handleShareProject = async (project: ProjectWithFiles) => {
-    const projectOwner = owner ?? project.owner ?? user.email;
-    const projectShareLink = `${window.location.origin}/project/${projectOwner}/${project.id}`;
-
+  const handleShareProject = (project: ProjectWithFiles) => {
     setProjectToShare(project);
-    setLinkCopied(false);
-    await handleCopyLink(projectShareLink);
   };
 
   const handleCloseShareModal = () => {
     setProjectToShare(null);
-    setLinkCopied(false);
   };
+
+  const requestSourceToPdf = useCallback(
+    async (position: PdfSyncSourcePosition, displayedPdfJobId: string) => {
+      if (!selectedProject || sourceSyncRequestRef.current) return false;
+      sourceSyncRequestRef.current = true;
+      const requestedRevision = sourceRevisionRef.current;
+      try {
+        const target = await compilationApiService.sourceToPdf(
+          selectedProject.id,
+          position,
+          displayedPdfJobId,
+        );
+        if (
+          target.pdfJobId !== displayedPdfJobId ||
+          requestedRevision !== sourceRevisionRef.current
+        ) {
+          return false;
+        }
+        setPdfSyncTarget(target);
+        setLayoutMode('split');
+        if (target.stale) {
+          toast('Le PDF correspond à une compilation antérieure.', 'info');
+        } else if (target.approximate) {
+          toast(
+            'Cette ligne n’est pas imprimée directement : la position PDF la plus proche est affichée.',
+            'info',
+          );
+        }
+        return true;
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : 'Synchronisation PDF impossible.';
+        toast(
+          message,
+          message.includes('zone de texte synchronisable')
+            ? 'warning'
+            : 'error',
+        );
+        return false;
+      } finally {
+        sourceSyncRequestRef.current = false;
+      }
+    },
+    [selectedProject, toast],
+  );
+
+  const handleSourceToPdf = useCallback(
+    async (position: PdfSyncSourcePosition) => {
+      const displayedPdfJobId = compilation.displayedPdfJobId;
+      const needsFreshCompilation =
+        !displayedPdfJobId ||
+        displayedPdfJobId !== compilation.synctexJobId ||
+        pdfLocallyStale ||
+        compilation.isPdfStale;
+
+      if (needsFreshCompilation) {
+        setPendingSourceSync(position);
+        setPdfSyncTarget(undefined);
+        toast(
+          'Mise à jour du PDF avant la synchronisation de la position…',
+          'info',
+        );
+        if (
+          compilation.status !== 'compiling' &&
+          !sourceSyncCompilationRef.current
+        ) {
+          sourceSyncCompilationRef.current = true;
+          try {
+            await runCompilation(false, true);
+          } finally {
+            sourceSyncCompilationRef.current = false;
+          }
+        }
+        return;
+      }
+      await requestSourceToPdf(position, displayedPdfJobId);
+    },
+    [
+      compilation.displayedPdfJobId,
+      compilation.isPdfStale,
+      compilation.status,
+      compilation.synctexJobId,
+      pdfLocallyStale,
+      requestSourceToPdf,
+      runCompilation,
+      toast,
+    ],
+  );
+
+  useEffect(() => {
+    if (!pendingSourceSync) return;
+    if (compilation.status === 'error') {
+      setPendingSourceSync(undefined);
+      toast(
+        'La compilation a échoué : la synchronisation n’a pas été lancée.',
+        'error',
+      );
+      return;
+    }
+    const displayedPdfJobId = compilation.displayedPdfJobId;
+    if (
+      compilation.status !== 'success' ||
+      !displayedPdfJobId ||
+      displayedPdfJobId !== compilation.pdfJobId ||
+      displayedPdfJobId !== compilation.synctexJobId
+    ) {
+      return;
+    }
+    const position = pendingSourceSync;
+    setPendingSourceSync(undefined);
+    void requestSourceToPdf(position, displayedPdfJobId);
+  }, [
+    compilation.displayedPdfJobId,
+    compilation.pdfJobId,
+    compilation.status,
+    compilation.synctexJobId,
+    pendingSourceSync,
+    requestSourceToPdf,
+    toast,
+  ]);
+
+  const handlePdfToSource = useCallback(
+    async (position: { page: number; x: number; y: number }) => {
+      if (!selectedProject) return;
+      const displayedPdfJobId = compilation.displayedPdfJobId;
+      if (!displayedPdfJobId) {
+        toast('Compilez le projet avant de synchroniser le PDF.', 'info');
+        return;
+      }
+      if (pdfSyncRequestRef.current) return;
+      pdfSyncRequestRef.current = true;
+      try {
+        const source = await compilationApiService.pdfToSource(
+          selectedProject.id,
+          position,
+          displayedPdfJobId,
+        );
+        if (source.pdfJobId !== displayedPdfJobId) return;
+        const file = findFileByPath(selectedProject.files, source.file);
+        if (!file)
+          throw new Error(`Fichier source introuvable : ${source.file}`);
+        setSelectedFileId(file.id);
+        setRevealPosition({
+          file: source.file,
+          line: source.line,
+          column: source.column,
+          requestId: Date.now(),
+        });
+        setLayoutMode('split');
+        if (source.stale) {
+          toast(
+            'La position provient de la dernière compilation réussie.',
+            'info',
+          );
+        } else if (source.approximate) {
+          toast(
+            'Le point choisi ne contient pas de texte : la ligne source la plus proche est affichée.',
+            'info',
+          );
+        }
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : 'Synchronisation source impossible.';
+        toast(
+          message,
+          message.includes('zone de texte synchronisable')
+            ? 'warning'
+            : 'error',
+        );
+      } finally {
+        pdfSyncRequestRef.current = false;
+      }
+    },
+    [compilation.displayedPdfJobId, selectedProject, toast],
+  );
 
   const handleExportSources = (project: ProjectWithFiles) => {
     downloadProjectSources(project);
@@ -1495,11 +1722,13 @@ const Dashboard: React.FC<DashboardProps> = ({
             )}
           </button>
 
-          <NotificationBell
-            theme="light"
-            onApprove={approveCollaborator}
-            onReject={removeCollaborator}
-          />
+          {!isGuest && (
+            <NotificationBell
+              theme="light"
+              onApprove={approveCollaborator}
+              onReject={removeCollaborator}
+            />
+          )}
 
           <div className="w-px h-5 bg-slate-700" />
 
@@ -1513,15 +1742,17 @@ const Dashboard: React.FC<DashboardProps> = ({
             <span>Exporter les sources</span>
           </button>
 
-          <button
-            onClick={() =>
-              selectedProject && void handleShareProject(selectedProject)
-            }
-            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded border border-slate-600 text-slate-300 hover:bg-white/10 hover:text-white hover:border-slate-500 transition-colors"
-          >
-            <Share2 className="w-3.5 h-3.5" />
-            <span>Partager</span>
-          </button>
+          {!isGuest && isOwnerOfSelected && (
+            <button
+              onClick={() =>
+                selectedProject && handleShareProject(selectedProject)
+              }
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded border border-slate-600 text-slate-300 hover:bg-white/10 hover:text-white hover:border-slate-500 transition-colors"
+            >
+              <Share2 className="w-3.5 h-3.5" />
+              <span>Partager</span>
+            </button>
+          )}
 
           {/* Compile button */}
           <button
@@ -1558,19 +1789,23 @@ const Dashboard: React.FC<DashboardProps> = ({
                 Projets
               </span>
               <div className="flex items-center gap-1">
-                <button
-                  onClick={() => navigate('/projects')}
-                  className="rounded px-2 py-1 text-[10px] font-medium text-slate-400 hover:bg-white/10 hover:text-white transition-colors"
-                >
-                  Voir tout
-                </button>
-                <button
-                  onClick={() => setIsCreateModalOpen(true)}
-                  className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-white transition-colors"
-                  title="Nouveau projet"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                </button>
+                {!isGuest && (
+                  <>
+                    <button
+                      onClick={() => navigate('/projects')}
+                      className="rounded px-2 py-1 text-[10px] font-medium text-slate-400 hover:bg-white/10 hover:text-white transition-colors"
+                    >
+                      Voir tout
+                    </button>
+                    <button
+                      onClick={() => setIsCreateModalOpen(true)}
+                      className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-white transition-colors"
+                      title="Nouveau projet"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                    </button>
+                  </>
+                )}
               </div>
             </div>
 
@@ -1602,16 +1837,18 @@ const Dashboard: React.FC<DashboardProps> = ({
                       <Users className="w-3 h-3 inline mr-0.5" />
                       {project.collaborators.length}
                     </span>
-                    <ProjectActionsMenu
-                      projectName={project.name}
-                      onOpen={() => handleSelectProject(project.id)}
-                      onShare={() => void handleShareProject(project)}
-                      onExport={() => handleExportSources(project)}
-                      onRename={() => handleStartRenameProject(project)}
-                      onDelete={() => setProjectToDelete(project)}
-                      buttonClassName="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 p-0.5 rounded text-slate-400 hover:text-white hover:bg-white/15"
-                      menuClassName="mt-1"
-                    />
+                    {!isGuest && (
+                      <ProjectActionsMenu
+                        projectName={project.name}
+                        onOpen={() => handleSelectProject(project.id)}
+                        onShare={() => handleShareProject(project)}
+                        onExport={() => handleExportSources(project)}
+                        onRename={() => handleStartRenameProject(project)}
+                        onDelete={() => setProjectToDelete(project)}
+                        buttonClassName="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 p-0.5 rounded text-slate-400 hover:text-white hover:bg-white/15"
+                        menuClassName="mt-1"
+                      />
+                    )}
                   </div>
                 </div>
               ))}
@@ -1801,9 +2038,16 @@ const Dashboard: React.FC<DashboardProps> = ({
                       key={`${selectedProject.id}:${selectedFile.id}`}
                       project={selectedProject}
                       file={selectedFile}
+                      filePath={selectedFilePath ?? selectedFile.name}
                       user={user}
                       onContentChange={onContentChange}
                       onCollaboratorsChange={onCollaboratorsChange}
+                      onSyncToPdf={handleSourceToPdf}
+                      revealPosition={
+                        revealPosition?.file === selectedFilePath
+                          ? revealPosition
+                          : undefined
+                      }
                     />
                   )
                 ) : (
@@ -1840,6 +2084,13 @@ const Dashboard: React.FC<DashboardProps> = ({
                   durationMs={compilation.durationMs}
                   onRecompile={() => void runCompilation(false, true)}
                   onClose={() => setLayoutMode('code')}
+                  isStale={pdfLocallyStale || compilation.isPdfStale}
+                  syncTarget={
+                    pdfSyncTarget?.pdfJobId === compilation.displayedPdfJobId
+                      ? pdfSyncTarget
+                      : undefined
+                  }
+                  onSyncToSource={handlePdfToSource}
                 />
               </div>
             )}
@@ -1862,10 +2113,8 @@ const Dashboard: React.FC<DashboardProps> = ({
 
       <ProjectShareModal
         isOpen={Boolean(projectToShare)}
+        projectId={projectToShare?.id}
         projectName={projectToShare?.name}
-        shareLink={shareLink}
-        linkCopied={linkCopied}
-        onCopy={() => void handleCopyLink()}
         onClose={handleCloseShareModal}
       />
 
