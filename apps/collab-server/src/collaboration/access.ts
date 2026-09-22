@@ -1,19 +1,67 @@
 import WebSocket from 'ws';
 import { env } from '../config/env.js';
 import type { CollaborationAccess, CollaborationConnection } from './types.js';
+import type { TokenPayload } from '../security/auth.js';
 
 export const collaborationConnections = new Set<CollaborationConnection>();
 
+export type CollaborationAccessChange =
+  | {
+      kind?: 'user';
+      projectId: string;
+      email: string;
+      access: CollaborationAccess;
+    }
+  | {
+      kind: 'guest';
+      projectId: string;
+      principalId: string;
+      access: CollaborationAccess;
+    };
+
+export const applyCollaborationAccessChange = (
+  change: CollaborationAccessChange,
+): number => {
+  let updated = 0;
+  for (const connection of collaborationConnections) {
+    const matches =
+      connection.projectId === change.projectId &&
+      (change.kind === 'guest'
+        ? connection.principalKind === 'guest' &&
+          connection.principalId === change.principalId
+        : connection.principalKind === 'user' &&
+          connection.email.toLowerCase() === change.email.toLowerCase());
+    if (!matches) continue;
+    updated += 1;
+    if (change.access === 'none') {
+      connection.ws.close(4003, 'Project access revoked');
+    } else {
+      connection.access = change.access;
+    }
+  }
+  return updated;
+};
+
 export const getCollaborationAccess = async (
   projectId: string,
-  email: string,
+  principal: TokenPayload,
 ): Promise<CollaborationAccess> => {
   try {
     const url = new URL(
       `/internal/projects/${encodeURIComponent(projectId)}/collaboration-access`,
       env.projectsApiUrl,
     );
-    url.searchParams.set('email', email);
+    url.searchParams.set('email', principal.email);
+    url.searchParams.set('kind', principal.kind === 'guest' ? 'guest' : 'user');
+    url.searchParams.set(
+      'id',
+      principal.kind === 'guest'
+        ? (principal.guestInvitationId ?? '')
+        : principal.sub,
+    );
+    if (principal.kind === 'guest') {
+      url.searchParams.set('principalProjectId', principal.projectId ?? '');
+    }
     const response = await fetch(url, {
       headers: { 'x-sync-secret': env.authSecret },
     });

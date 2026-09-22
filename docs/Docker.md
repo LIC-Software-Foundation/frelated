@@ -4,6 +4,8 @@
 
 - `redis` : file BullMQ, paramètres et derniers résultats chiffrés
 - `compilation-worker` : latexmk, pdfLaTeX, XeLaTeX, LuaLaTeX et BibTeX/Biber
+- `languagetool` : correcteur linguistique local
+- `mailhog` : serveur SMTP local et boîte de réception de développement
 
 - `mysql` : base Prisma pour les utilisateurs, projets SQL et collaborateurs
 - `mongodb` : stockage des projets et fichiers chiffrés
@@ -19,6 +21,13 @@ La communication inter-conteneurs utilise les noms de services `mysql`, `mongodb
 
 ```bash
 ./run-docker.sh up
+```
+
+Tous les services, y compris MailHog et LanguageTool, sont lancés par défaut.
+Pour démarrer uniquement les services applicatifs :
+
+```bash
+./run-docker.sh up --no-tools
 ```
 
 Le script crée `.env.docker` depuis `.env.docker.example` s'il est absent.
@@ -43,5 +52,7 @@ Par defaut, les ports publies ont ete decales pour eviter les conflits locaux:
 - API : `http://localhost:3000`
 - Swagger : `http://localhost:3000/docs`
 - Collaboration : `ws://localhost:8080`
+- MailHog : `http://localhost:8025`
+- LanguageTool : `http://localhost:8010`
 
 Voir [Compilation](Compilation.md) pour répliquer les workers et configurer les limites.

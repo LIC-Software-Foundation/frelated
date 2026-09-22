@@ -37,23 +37,40 @@ body {
   color: var(--text-1);
 }
 
+.editor-toolbar {
+  container-type: inline-size;
+  container-name: editor-toolbar;
+}
+
+@container editor-toolbar (max-width: 900px) {
+  .editor-toolbar .toolbar-label,
+  .editor-toolbar .toolbar-status-label {
+    display: none;
+  }
+}
+
 *::-webkit-scrollbar {
   width: 5px;
   height: 5px;
 }
+
 *::-webkit-scrollbar-track {
   background: transparent;
 }
+
 *::-webkit-scrollbar-thumb {
   background: rgba(0, 0, 0, 0.14);
   border-radius: 9999px;
 }
+
 *::-webkit-scrollbar-thumb:hover {
   background: rgba(0, 0, 0, 0.26);
 }
+
 .sidebar-scroll::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.1);
 }
+
 .sidebar-scroll::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.2);
 }
@@ -61,12 +78,15 @@ body {
 .cm-editor {
   height: 100%;
 }
+
 .cm-editor.cm-focused {
   outline: none !important;
 }
+
 .cm-scroller {
   overflow: auto;
 }
+
 .cm-content {
   font-size: inherit;
   font-family: inherit;
@@ -77,11 +97,13 @@ body {
     opacity: 0;
     transform: translateY(10px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
   }
 }
+
 .animate-slide-up {
   animation: slide-up 0.2s ease-out;
 }
@@ -90,10 +112,12 @@ body {
   from {
     opacity: 0;
   }
+
   to {
     opacity: 1;
   }
 }
+
 .animate-fade-in {
   animation: fade-in 0.18s ease-out;
 }
@@ -103,23 +127,29 @@ body {
     opacity: 0;
     transform: translateY(22px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
   }
 }
+
 .animate-fade-up {
   animation: fade-up 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
+
 .animate-fade-up-d1 {
   animation-delay: 0.1s;
 }
+
 .animate-fade-up-d2 {
   animation-delay: 0.22s;
 }
+
 .animate-fade-up-d3 {
   animation-delay: 0.34s;
 }
+
 .animate-fade-up-d4 {
   animation-delay: 0.46s;
 }
@@ -129,10 +159,12 @@ body {
   100% {
     transform: translateY(0);
   }
+
   50% {
     transform: translateY(-16px);
   }
 }
+
 .animate-float {
   animation: float-slow 6s ease-in-out infinite;
 }
@@ -142,6 +174,7 @@ body {
     transform: rotate(360deg);
   }
 }
+
 .animate-spin-slow {
   animation: spin-slow 1.2s linear infinite;
 }
@@ -152,6 +185,7 @@ body {
     box-shadow 0.2s ease,
     border-color 0.2s ease;
 }
+
 .card-lift:hover {
   transform: translateY(-3px);
   box-shadow: 0 14px 36px rgba(45, 106, 79, 0.11);
@@ -168,6 +202,7 @@ body {
     opacity: 0;
     transform: translateY(10px) scale(0.96);
   }
+
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
@@ -175,4 +210,101 @@ body {
 }
 .toast-enter {
   animation: toast-in 0.2s ease-out both;
+}
+
+/* CodeMirror places every lint action inline by default. Proofreading often
+   returns several long suggestions, so present them as a readable menu. */
+.cm-tooltip-lint {
+  min-width: min(360px, calc(100vw - 32px));
+  max-width: min(480px, calc(100vw - 32px));
+  max-height: min(480px, calc(100vh - 32px));
+  margin: 0 !important;
+  padding: 6px !important;
+  overflow-y: auto;
+  border: 1px solid #dbe3ee;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.2);
+}
+
+.cm-tooltip-lint .cm-diagnostic {
+  display: flex !important;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  margin: 0;
+  padding: 10px 10px 10px 12px;
+  color: #1e293b;
+  white-space: normal;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.cm-tooltip-lint .cm-diagnostic + .cm-diagnostic {
+  margin-top: 6px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.cm-tooltip-lint .cm-diagnosticText {
+  order: 0;
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.cm-tooltip-lint .cm-diagnosticSource {
+  order: 1;
+  margin-bottom: 2px;
+  color: #64748b;
+  font-size: 11px;
+  opacity: 1;
+}
+
+.cm-tooltip-lint .cm-diagnosticAction {
+  order: 2;
+  display: block;
+  width: 100%;
+  margin: 0 !important;
+  padding: 7px 10px;
+  overflow-wrap: anywhere;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.35;
+  text-align: left;
+  white-space: normal;
+  border: 1px solid #dbe3ee;
+  border-radius: 7px;
+  background: #f8fafc;
+  transition:
+    color 120ms ease,
+    border-color 120ms ease,
+    background-color 120ms ease;
+}
+
+.cm-tooltip-lint .frelated-proofreading-suggestion {
+  color: #166534;
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.cm-tooltip-lint .frelated-proofreading-suggestion:hover,
+.cm-tooltip-lint .frelated-proofreading-suggestion:focus-visible {
+  color: #14532d;
+  border-color: #4ade80;
+  background: #dcfce7;
+}
+
+.cm-tooltip-lint .frelated-proofreading-ignore {
+  color: #64748b;
+  border-color: transparent;
+  background: transparent;
+}
+
+.cm-tooltip-lint .frelated-proofreading-ignore:hover,
+.cm-tooltip-lint .frelated-proofreading-ignore:focus-visible {
+  color: #334155;
+  border-color: #e2e8f0;
+  background: #f1f5f9;
 }

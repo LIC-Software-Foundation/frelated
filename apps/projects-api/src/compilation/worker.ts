@@ -17,7 +17,7 @@ const worker = new Worker(
     const stateKey = key(projectId);
     // Superseded jobs never spend CPU on an obsolete revision.
     if ((await redis.hget(stateKey, 'jobId')) !== job.id) return;
-    const { result, pdf } = await compileSnapshot(
+    const { result, pdf, synctex } = await compileSnapshot(
       decode<Snapshot>(snapshot, projectId),
     );
     // Compare-and-set prevents a slower old job from overwriting a newer result.
@@ -25,10 +25,10 @@ const worker = new Worker(
       `
     if redis.call('HGET', KEYS[1], 'jobId') ~= ARGV[1] then return 0 end
     redis.call('HSET', KEYS[1], 'status', ARGV[2], 'result', ARGV[3])
-    if ARGV[2] == 'success' then
-      redis.call('HSET', KEYS[1], 'pdf', ARGV[4], 'pdfJobId', ARGV[1], 'pdfHash', ARGV[5])
+    if ARGV[2] == 'success' and ARGV[4] ~= '' and ARGV[5] ~= '' then
+      redis.call('HSET', KEYS[1], 'pdf', ARGV[4], 'pdfJobId', ARGV[1], 'pdfHash', ARGV[6], 'synctex', ARGV[5], 'synctexJobId', ARGV[1], 'synctexHash', ARGV[6], 'synctexSnapshot', ARGV[7])
     end
-    redis.call('PUBLISH', 'frelated-compilation-events', ARGV[6])
+    redis.call('PUBLISH', 'frelated-compilation-events', ARGV[8])
     return 1
   `,
       1,
@@ -37,7 +37,9 @@ const worker = new Worker(
       result.status,
       encode(result, projectId),
       pdf ? encode(pdf, projectId) : '',
+      synctex ? encode(synctex, projectId) : '',
       hash,
+      snapshot,
       projectId,
     );
   },

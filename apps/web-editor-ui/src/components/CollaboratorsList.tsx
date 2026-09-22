@@ -11,11 +11,11 @@ import {
   X,
   Trash2,
 } from 'lucide-react';
-import { User, Collaborator } from '@frelated/types';
+import type { EditorIdentity, Collaborator } from '@frelated/types';
 
 interface CollaboratorsListProps {
   collaborators: Collaborator[];
-  currentUser: User;
+  currentUser: EditorIdentity;
   owner?: string;
   isOwner?: boolean;
   onUpdateRole?: (collaboratorId: string, role: 'viewer' | 'editor') => void;

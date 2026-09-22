@@ -176,7 +176,9 @@ const DropdownMenu: React.FC<DropdownMenuProps> = ({
         }`}
       >
         <span className="flex-shrink-0">{icon}</span>
-        <span className="hidden xl:inline whitespace-nowrap">{label}</span>
+        <span className="toolbar-label hidden xl:inline whitespace-nowrap">
+          {label}
+        </span>
         <ChevronDown
           className={`w-3 h-3 flex-shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`}
         />
@@ -340,12 +342,12 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
 
   return (
     <div
-      className={`flex items-center border-b flex-shrink-0 px-2 py-1 gap-0.5 ${toolbarBg}`}
+      className={`editor-toolbar flex items-center border-b flex-shrink-0 px-2 py-1 gap-0.5 ${toolbarBg}`}
     >
       {/* ══════════════════════════════════
           LEFT: LaTeX tools
       ══════════════════════════════════ */}
-      <div className="flex items-center gap-0.5 flex-1 min-w-0 overflow-visible">
+      <div className="editor-toolbar-actions flex items-center gap-0.5 flex-1 min-w-0 overflow-visible">
         {/* ── Inline formatting ── */}
         <ToolbarBtn
           isDark={isDark}
@@ -689,7 +691,7 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
             <>
               <Wifi className="w-3.5 h-3.5 text-emerald-500" />
               <span
-                className={`text-xs hidden sm:inline ${isDark ? 'text-emerald-400' : 'text-emerald-700'}`}
+                className={`toolbar-status-label text-xs hidden sm:inline ${isDark ? 'text-emerald-400' : 'text-emerald-700'}`}
               >
                 Connecté
               </span>
@@ -698,7 +700,7 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
             <>
               <WifiOff className="w-3.5 h-3.5 text-red-500" />
               <span
-                className={`text-xs hidden sm:inline ${isDark ? 'text-red-400' : 'text-red-600'}`}
+                className={`toolbar-status-label text-xs hidden sm:inline ${isDark ? 'text-red-400' : 'text-red-600'}`}
               >
                 Hors ligne
               </span>

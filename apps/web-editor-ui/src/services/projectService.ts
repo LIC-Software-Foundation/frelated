@@ -120,7 +120,9 @@ export async function listProjects(
 
   // No filter: return all projects accessible to the current session user
   // (owned projects + projects where user is an approved collaborator)
-  const currentEmail = readApiSession()?.user?.email;
+  const currentSession = readApiSession();
+  const currentEmail =
+    currentSession?.kind === 'user' ? currentSession.user.email : undefined;
   if (!currentEmail) return [];
 
   return sortProjectsByActivity(
@@ -151,7 +153,9 @@ export async function getSharedProject(
     throw new Error('Projet partage introuvable.');
   }
 
-  const currentEmail = readApiSession()?.user?.email;
+  const currentSession = readApiSession();
+  const currentEmail =
+    currentSession?.kind === 'user' ? currentSession.user.email : undefined;
 
   // Owner always has access
   if (!currentEmail || currentEmail === project.owner) {
@@ -169,7 +173,7 @@ export async function getSharedProject(
 
   // New visitor: add as pending and push a local notification to the owner
   const session = readApiSession();
-  const requester = session?.user;
+  const requester = session?.kind === 'user' ? session.user : undefined;
   if (!requester) throw new Error('PENDING_APPROVAL');
 
   // Fresh UUID for the collaborator row (not the user UUID) — mirrors the API behaviour

@@ -5,6 +5,9 @@ import { env } from '../config/env';
 import { createSeedStore } from '../data/seed';
 import type {
   ApiUser,
+  AppNotificationRecord,
+  AuthPrincipal,
+  GuestPrincipal,
   ProjectCollaborator,
   ProjectFile,
   ProjectRecord,
@@ -14,28 +17,28 @@ import {
   type MongoProjectRecord,
 } from '../repositories/mongoStore';
 import { toStoredAcl, type StoredFileIndexNode } from './fileStore';
+import { assertProjectParticipantCapacity } from './projectCapacity';
 
-const notifyOwner = (
+const notifyOwner = async (
   ownerEmail: string,
-  notification: {
-    id: string;
-    type: string;
-    projectId: string;
-    projectName: string;
-    requesterName: string;
-    requesterEmail: string;
-    collaboratorId: string;
-    ownerEmail: string;
-    createdAt: string;
-  },
-): void => {
-  fetch(`${env.collabServerUrl}/internal/notify`, {
+  notification: Omit<AppNotificationRecord, 'recipientEmail' | 'read'>,
+): Promise<void> => {
+  const persistedNotification: AppNotificationRecord = {
+    ...notification,
+    recipientEmail: ownerEmail.trim().toLowerCase(),
+    read: false,
+  };
+  await mongoStore.insertNotification(persistedNotification);
+  void fetch(`${env.collabServerUrl}/internal/notify`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'x-sync-secret': env.authSecret,
     },
-    body: JSON.stringify({ recipientEmail: ownerEmail, notification }),
+    body: JSON.stringify({
+      recipientEmail: ownerEmail,
+      notification: persistedNotification,
+    }),
   }).catch(() => {
     // Non-blocking: a notification failure must not block the main request.
   });
@@ -134,22 +137,38 @@ const notifyAccessChange = (
 const isApprovedCollaborator = (collaborator: { status?: string }) =>
   !collaborator.status || collaborator.status === 'approved';
 
-const canEditProject = (project: ProjectRecord, user: ApiUser): boolean =>
-  normalizeEmail(project.owner) === normalizeEmail(user.email) ||
-  project.collaborators.some(
-    (collaborator) =>
-      normalizeEmail(collaborator.email) === normalizeEmail(user.email) &&
-      collaborator.role !== 'viewer' &&
-      isApprovedCollaborator(collaborator),
-  );
+type ProjectRequester = ApiUser | AuthPrincipal;
+const isGuest = (requester: ProjectRequester): requester is GuestPrincipal =>
+  'kind' in requester && requester.kind === 'guest';
 
-const canReadProject = (project: ProjectRecord, user: ApiUser): boolean =>
-  normalizeEmail(project.owner) === normalizeEmail(user.email) ||
-  project.collaborators.some(
-    (collaborator) =>
-      normalizeEmail(collaborator.email) === normalizeEmail(user.email) &&
-      isApprovedCollaborator(collaborator),
-  );
+const canEditProject = (
+  project: ProjectRecord,
+  requester: ProjectRequester,
+): boolean =>
+  isGuest(requester)
+    ? requester.projectId === project.id
+    : normalizeEmail(project.owner) === normalizeEmail(requester.email) ||
+      project.collaborators.some(
+        (collaborator) =>
+          normalizeEmail(collaborator.email) ===
+            normalizeEmail(requester.email) &&
+          collaborator.role !== 'viewer' &&
+          isApprovedCollaborator(collaborator),
+      );
+
+const canReadProject = (
+  project: ProjectRecord,
+  requester: ProjectRequester,
+): boolean =>
+  isGuest(requester)
+    ? requester.projectId === project.id
+    : normalizeEmail(project.owner) === normalizeEmail(requester.email) ||
+      project.collaborators.some(
+        (collaborator) =>
+          normalizeEmail(collaborator.email) ===
+            normalizeEmail(requester.email) &&
+          isApprovedCollaborator(collaborator),
+      );
 
 const sanitizeCollaborator = (
   collaborator: ProjectCollaborator,
@@ -248,7 +267,7 @@ const hydrateProjectFromMongo = async (
 
 export const projectsService = {
   async getCompilationProject(
-    requester: ApiUser,
+    requester: ProjectRequester,
     projectId: string,
     edit = false,
   ): Promise<ProjectRecord> {
@@ -264,8 +283,12 @@ export const projectsService = {
       throw new Error('FORBIDDEN');
     return project;
   },
-  async listProjects(requester: ApiUser, ownerEmail?: string) {
+  async listProjects(requester: ProjectRequester, ownerEmail?: string) {
     await ensureMongoSeedProjects();
+    if (isGuest(requester)) {
+      const row = await mongoStore.findProjectById(requester.projectId);
+      return row ? [await hydrateProjectFromMongo(row)] : [];
+    }
     const rows = await mongoStore.listProjects(
       normalizeEmail(requester.email),
       ownerEmail ? normalizeEmail(ownerEmail) : undefined,
@@ -322,7 +345,7 @@ export const projectsService = {
       collaborators: toStoredAcl(project.collaborators),
     });
 
-    notifyOwner(project.owner, {
+    await notifyOwner(project.owner, {
       id: randomUUID(),
       type: 'collaboration_request',
       projectId: project.id,
@@ -439,7 +462,7 @@ export const projectsService = {
   },
 
   async markProjectAsOpened(
-    requester: ApiUser,
+    requester: ProjectRequester,
     projectId: string,
   ): Promise<ProjectRecord> {
     ensureMongoProjectsConfigured();
@@ -462,7 +485,7 @@ export const projectsService = {
   },
 
   async replaceProjectFiles(
-    requester: ApiUser,
+    requester: ProjectRequester,
     projectId: string,
     input: unknown,
   ): Promise<ProjectRecord> {
@@ -519,6 +542,11 @@ export const projectsService = {
     const collaborators = payload.collaborators.map((collaborator) =>
       sanitizeCollaborator(collaborator),
     );
+    await assertProjectParticipantCapacity(
+      row,
+      collaborators.map((collaborator) => collaborator.email),
+      collaborators,
+    );
     const updatedAt = new Date().toISOString();
 
     await mongoStore.updateProject(projectId, {
@@ -563,7 +591,7 @@ export const projectsService = {
   },
 
   async updateFileContent(
-    requester: ApiUser,
+    requester: ProjectRequester,
     projectId: string,
     fileId: string,
     content: string,
@@ -611,6 +639,14 @@ export const projectsService = {
     if (normalizeEmail(row.ownerEmail) !== normalizeEmail(requester.email)) {
       throw new Error('FORBIDDEN');
     }
+
+    const collaboratorToApprove = row.collaborators.find(
+      (collaborator) => collaborator.id === collaboratorId,
+    );
+    if (!collaboratorToApprove) {
+      throw new Error('COLLABORATOR_NOT_FOUND');
+    }
+    await assertProjectParticipantCapacity(row, collaboratorToApprove.email);
 
     const approved = await mongoStore.approveProjectCollaborator(
       projectId,
@@ -694,6 +730,92 @@ export const projectsService = {
     );
     if (!collaborator || !isApprovedCollaborator(collaborator)) return 'none';
     return collaborator.role === 'viewer' ? 'viewer' : 'editor';
+  },
+
+  async getPrincipalCollaborationAccess(
+    projectId: string,
+    principal:
+      | { kind: 'user'; email: string }
+      | {
+          kind: 'guest';
+          id: string;
+          email: string;
+          projectId: string;
+        },
+  ): Promise<CollaborationAccess> {
+    if (principal.kind === 'user') {
+      return this.getCollaborationAccess(projectId, principal.email);
+    }
+    if (principal.projectId !== projectId) return 'none';
+    const invitation = await mongoStore.findGuestInvitationById(principal.id);
+    if (
+      !invitation ||
+      invitation.projectId !== projectId ||
+      invitation.status !== 'active' ||
+      invitation.revokedAt ||
+      (invitation.expiresAt &&
+        Date.parse(invitation.expiresAt) <= Date.now()) ||
+      normalizeEmail(invitation.email) !== normalizeEmail(principal.email)
+    ) {
+      return 'none';
+    }
+    return 'editor';
+  },
+
+  async addApprovedCollaborator(
+    requester: ApiUser,
+    projectId: string,
+  ): Promise<ProjectRecord> {
+    ensureMongoProjectsConfigured();
+    const row = await mongoStore.findProjectById(projectId);
+    if (!row) throw new Error('PROJECT_NOT_FOUND');
+    const project = await hydrateProjectFromMongo(row);
+    if (normalizeEmail(project.owner) === normalizeEmail(requester.email)) {
+      return project;
+    }
+    const existing = project.collaborators.find(
+      (entry) =>
+        normalizeEmail(entry.email) === normalizeEmail(requester.email),
+    );
+    if (existing && existing.status !== 'pending') {
+      return project;
+    }
+    await assertProjectParticipantCapacity(row, requester.email);
+    let collaboratorId: string;
+    if (existing) {
+      collaboratorId = existing.id;
+      existing.name = requester.name;
+      existing.role = existing.role === 'owner' ? 'owner' : 'editor';
+      existing.status = 'approved';
+    } else {
+      collaboratorId = randomUUID();
+      project.collaborators.push({
+        id: collaboratorId,
+        name: requester.name,
+        email: normalizeEmail(requester.email),
+        role: 'editor',
+        status: 'approved',
+        isOnline: false,
+      });
+    }
+    project.updatedAt = new Date().toISOString();
+    await mongoStore.updateProject(projectId, {
+      updatedAt: project.updatedAt,
+      collaborators: toStoredAcl(project.collaborators),
+    });
+    notifyAccessChange(projectId, requester.email, 'editor');
+    await notifyOwner(project.owner, {
+      id: randomUUID(),
+      type: 'collaborator_joined',
+      projectId: project.id,
+      projectName: project.name,
+      requesterName: requester.name,
+      requesterEmail: normalizeEmail(requester.email),
+      collaboratorId,
+      ownerEmail: project.owner,
+      createdAt: new Date().toISOString(),
+    });
+    return project;
   },
 
   async syncFileContent(

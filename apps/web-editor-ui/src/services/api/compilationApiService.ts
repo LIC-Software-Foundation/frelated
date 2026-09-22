@@ -1,6 +1,10 @@
 import { API_BASE_URL, apiFetch } from './http';
 import { readApiSession } from './sessionStorage';
 import type { CompilationSettings, CompilationState } from '../../types';
+import type {
+  PdfSyncSourcePosition,
+  PdfSyncTargetPosition,
+} from '@frelated/types';
 
 const endpoint = (id: string) =>
   `/projects/${encodeURIComponent(id)}/compilation`;
@@ -22,6 +26,36 @@ export const compilationApiService = {
     });
     if (!response.ok) throw new Error('Impossible de charger le PDF.');
     return URL.createObjectURL(await response.blob());
+  },
+  sourceToPdf(id: string, position: PdfSyncSourcePosition, pdfJobId: string) {
+    const query = new URLSearchParams({
+      file: position.file,
+      line: String(position.line),
+      column: String(position.column ?? 0),
+      pdfJobId,
+    });
+    return apiFetch<PdfSyncTargetPosition>(
+      `${endpoint(id)}/sync/source?${query.toString()}`,
+    );
+  },
+  pdfToSource(
+    id: string,
+    position: { page: number; x: number; y: number },
+    pdfJobId: string,
+  ) {
+    const query = new URLSearchParams({
+      page: String(position.page),
+      x: String(position.x),
+      y: String(position.y),
+      pdfJobId,
+    });
+    return apiFetch<
+      PdfSyncSourcePosition & {
+        pdfJobId: string;
+        stale?: boolean;
+        approximate?: boolean;
+      }
+    >(`${endpoint(id)}/sync/pdf?${query.toString()}`);
   },
   subscribe(id: string, onState: (state: CompilationState) => void) {
     let socket: WebSocket | undefined;

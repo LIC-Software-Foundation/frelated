@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { Collaborator, User } from '@frelated/types';
+import type { Collaborator, EditorIdentity, User } from '@frelated/types';
 import { ProjectFile, ProjectWithFiles } from '../types';
 import { appServices } from '../services';
 import { sortProjectsByActivity } from '../services/projectService';
@@ -20,11 +20,17 @@ const updateFileInTree = (
         : f,
   );
 
-export function useProjects(user: User, ownerEmail?: string) {
+export function useProjects(user: EditorIdentity, ownerEmail?: string) {
   const [projects, setProjects] = useState<ProjectWithFiles[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const listOwnerFilter = ownerEmail?.trim() || '';
   const scopedOwnerEmail = ownerEmail || user.email;
+  const accountUser = useCallback((): User => {
+    if ('kind' in user && user.kind === 'guest') {
+      throw new Error('Cette action nécessite un compte utilisateur.');
+    }
+    return user as User;
+  }, [user]);
 
   const loadProjects = useCallback(async () => {
     setIsLoading(true);
@@ -65,24 +71,27 @@ export function useProjects(user: User, ownerEmail?: string) {
 
   const createProject = useCallback(
     async (name: string): Promise<ProjectWithFiles> => {
-      const project = await appServices.projects.createProject(user, name);
+      const project = await appServices.projects.createProject(
+        accountUser(),
+        name,
+      );
       setProjects((current) => sortProjectsByActivity([project, ...current]));
       return project;
     },
-    [user],
+    [accountUser],
   );
 
   const importProject = useCallback(
     async (name: string, result: ImportResult): Promise<ProjectWithFiles> => {
       const project = await appServices.projects.importProject(
-        user,
+        accountUser(),
         name,
         result,
       );
       setProjects((current) => sortProjectsByActivity([project, ...current]));
       return project;
     },
-    [user],
+    [accountUser],
   );
 
   const deleteProject = useCallback(

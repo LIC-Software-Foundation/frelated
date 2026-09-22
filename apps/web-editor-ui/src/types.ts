@@ -47,9 +47,13 @@ export interface CompilationState {
   revision?: number;
   jobId?: string;
   pdfJobId?: string;
+  synctexJobId?: string;
+  isPdfStale?: boolean;
   settings?: CompilationSettings;
   status: CompilationStatus;
   pdfUrl?: string;
+  /** Job id of the PDF that pdfUrl currently represents. */
+  displayedPdfJobId?: string;
   logs: LogEntry[];
   compiledAt?: string;
   durationMs?: number;

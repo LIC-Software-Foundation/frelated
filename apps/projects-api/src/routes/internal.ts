@@ -16,11 +16,18 @@ export default async function internalRoutes(server: FastifyInstance) {
         return reply.status(401).send({ message: 'Secret invalide.' });
       }
       const { projectId } = request.params as { projectId: string };
-      const { email } = request.query as { email?: string };
+      const { email, kind, id, principalProjectId } = request.query as {
+        email?: string;
+        kind?: 'user' | 'guest';
+        id?: string;
+        principalProjectId?: string;
+      };
       if (!email) return reply.status(400).send({ message: 'Email requis.' });
-      const access = await projectsService.getCollaborationAccess(
+      const access = await projectsService.getPrincipalCollaborationAccess(
         projectId,
-        email,
+        kind === 'guest' && id && principalProjectId
+          ? { kind, id, email, projectId: principalProjectId }
+          : { kind: 'user', email },
       );
       return { access };
     },

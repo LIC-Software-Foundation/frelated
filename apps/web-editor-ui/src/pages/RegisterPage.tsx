@@ -1,5 +1,5 @@
 import { FormEvent, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   BookOpen,
   Mail,
@@ -15,6 +15,10 @@ import {
 } from 'lucide-react';
 import type { RegisterPayload } from '../services/auth.types';
 import { Button, Input } from '../components/ui';
+import {
+  authPageWithReturnPath,
+  safeAuthReturnPath,
+} from '../services/authReturnPath';
 
 interface RegisterPageProps {
   onRegister: (payload: RegisterPayload) => Promise<void>;
@@ -33,6 +37,8 @@ const RegisterPage: React.FC<RegisterPageProps> = ({
   isSubmitting,
 }) => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const returnPath = safeAuthReturnPath(searchParams.get('returnTo'));
   const [form, setForm] = useState({
     name: '',
     email: '',
@@ -75,7 +81,7 @@ const RegisterPage: React.FC<RegisterPageProps> = ({
         password: form.password,
         organization: form.organization || undefined,
       });
-      navigate('/projects');
+      navigate(returnPath, { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Inscription impossible.');
     }
@@ -298,7 +304,7 @@ const RegisterPage: React.FC<RegisterPageProps> = ({
             <p className="mt-6 text-center text-[13px] text-slate-500">
               Déjà un compte ?{' '}
               <Link
-                to="/login"
+                to={authPageWithReturnPath('/login', returnPath)}
                 className="font-semibold text-[#2d6a4f] hover:text-[#245a41] transition-colors"
               >
                 Se connecter

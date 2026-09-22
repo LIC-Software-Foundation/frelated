@@ -1,4 +1,10 @@
-import { useCallback, useRef, useState, ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import { CheckCircle2, XCircle, AlertTriangle, Info, X } from 'lucide-react';
 import { ToastContext, ToastKind } from './ToastContext';
 
@@ -26,21 +32,52 @@ export const ToastProvider: React.FC<{ children: ReactNode }> = ({
   children,
 }) => {
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const toastsRef = useRef<Toast[]>([]);
   const timerRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   const dismiss = useCallback((id: string) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
+    const next = toastsRef.current.filter((toast) => toast.id !== id);
+    toastsRef.current = next;
+    setToasts(next);
     clearTimeout(timerRef.current[id]);
     delete timerRef.current[id];
   }, []);
 
   const toast = useCallback(
     (message: string, kind: ToastKind = 'info') => {
+      const duplicate = toastsRef.current.find(
+        (current) => current.kind === kind && current.message === message,
+      );
+      if (duplicate) {
+        clearTimeout(timerRef.current[duplicate.id]);
+        timerRef.current[duplicate.id] = setTimeout(
+          () => dismiss(duplicate.id),
+          4200,
+        );
+        return;
+      }
       const id = crypto.randomUUID();
-      setToasts((prev) => [...prev, { id, kind, message }]);
+      const next = [...toastsRef.current, { id, kind, message }].slice(-4);
+      const visibleIds = new Set(next.map((current) => current.id));
+      for (const current of toastsRef.current) {
+        if (!visibleIds.has(current.id)) {
+          clearTimeout(timerRef.current[current.id]);
+          delete timerRef.current[current.id];
+        }
+      }
+      toastsRef.current = next;
+      setToasts(next);
       timerRef.current[id] = setTimeout(() => dismiss(id), 4200);
     },
     [dismiss],
+  );
+
+  useEffect(
+    () => () => {
+      Object.values(timerRef.current).forEach(clearTimeout);
+      timerRef.current = {};
+    },
+    [],
   );
 
   return (
@@ -50,6 +87,7 @@ export const ToastProvider: React.FC<{ children: ReactNode }> = ({
       <div
         className="fixed bottom-6 right-6 z-[9999] flex flex-col gap-2 pointer-events-none"
         aria-live="polite"
+        aria-atomic="false"
       >
         {toasts.map((t) => {
           const Icon = ICONS[t.kind];

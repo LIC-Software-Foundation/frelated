@@ -8,6 +8,7 @@ const BUSINESS_ERRORS = new Set([
   'PENDING_APPROVAL',
   'COLLABORATOR_NOT_FOUND',
   'FILE_NOT_FOUND',
+  'PROJECT_PARTICIPANT_LIMIT',
 ]);
 
 /** Returns the error message only if it was thrown intentionally by the service.
@@ -70,6 +71,13 @@ const handleProjectError = (reply: FastifyReply, error: unknown) => {
     return;
   }
 
+  if (message === 'PROJECT_PARTICIPANT_LIMIT') {
+    reply.status(409).send({
+      message: 'Le nombre maximal de participants du projet est atteint.',
+    });
+    return;
+  }
+
   if (message === 'MONGODB_UNAVAILABLE') {
     reply.status(503).send({
       message:
@@ -89,7 +97,7 @@ export default async function projectsRoutes(server: FastifyInstance) {
     '/',
     { preHandler: server.authenticate },
     async (request, reply) => {
-      if (!request.currentUser) {
+      if (!request.currentPrincipal) {
         return reply.status(401).send({ message: 'Authentification requise.' });
       }
 
@@ -101,7 +109,7 @@ export default async function projectsRoutes(server: FastifyInstance) {
           : undefined;
 
       const projects = await projectsService.listProjects(
-        request.currentUser,
+        request.currentPrincipal,
         ownerEmail || undefined,
       );
 
@@ -114,7 +122,9 @@ export default async function projectsRoutes(server: FastifyInstance) {
     { preHandler: server.authenticate },
     async (request, reply) => {
       if (!request.currentUser) {
-        return reply.status(401).send({ message: 'Authentification requise.' });
+        return reply
+          .status(403)
+          .send({ message: 'Compte utilisateur requis.' });
       }
 
       try {
@@ -135,7 +145,9 @@ export default async function projectsRoutes(server: FastifyInstance) {
     { preHandler: server.authenticate },
     async (request, reply) => {
       if (!request.currentUser) {
-        return reply.status(401).send({ message: 'Authentification requise.' });
+        return reply
+          .status(403)
+          .send({ message: 'Compte utilisateur requis.' });
       }
 
       try {
@@ -156,7 +168,9 @@ export default async function projectsRoutes(server: FastifyInstance) {
     { preHandler: server.authenticate },
     async (request, reply) => {
       if (!request.currentUser) {
-        return reply.status(401).send({ message: 'Authentification requise.' });
+        return reply
+          .status(403)
+          .send({ message: 'Compte utilisateur requis.' });
       }
 
       try {
@@ -177,14 +191,14 @@ export default async function projectsRoutes(server: FastifyInstance) {
     '/:projectId/open',
     { preHandler: server.authenticate },
     async (request, reply) => {
-      if (!request.currentUser) {
+      if (!request.currentPrincipal) {
         return reply.status(401).send({ message: 'Authentification requise.' });
       }
 
       try {
         const params = request.params as { projectId: string };
         const project = await projectsService.markProjectAsOpened(
-          request.currentUser,
+          request.currentPrincipal,
           params.projectId,
         );
         return { project };
@@ -198,7 +212,7 @@ export default async function projectsRoutes(server: FastifyInstance) {
     '/:projectId/files/:fileId',
     { preHandler: server.authenticate },
     async (request, reply) => {
-      if (!request.currentUser) {
+      if (!request.currentPrincipal) {
         return reply.status(401).send({ message: 'Authentification requise.' });
       }
 
@@ -213,7 +227,7 @@ export default async function projectsRoutes(server: FastifyInstance) {
         }
 
         await projectsService.updateFileContent(
-          request.currentUser,
+          request.currentPrincipal,
           params.projectId,
           params.fileId,
           body.content,
@@ -230,14 +244,14 @@ export default async function projectsRoutes(server: FastifyInstance) {
     '/:projectId/files',
     { preHandler: server.authenticate },
     async (request, reply) => {
-      if (!request.currentUser) {
+      if (!request.currentPrincipal) {
         return reply.status(401).send({ message: 'Authentification requise.' });
       }
 
       try {
         const params = request.params as { projectId: string };
         const project = await projectsService.replaceProjectFiles(
-          request.currentUser,
+          request.currentPrincipal,
           params.projectId,
           request.body,
         );
@@ -253,7 +267,7 @@ export default async function projectsRoutes(server: FastifyInstance) {
     { preHandler: server.authenticate },
     async (request, reply) => {
       if (!request.currentUser) {
-        return reply.status(401).send({ message: 'Authentification requise.' });
+        return reply.status(403).send({ message: 'Propriétaire requis.' });
       }
 
       try {
@@ -278,7 +292,7 @@ export default async function projectsRoutes(server: FastifyInstance) {
     { preHandler: server.authenticate },
     async (request, reply) => {
       if (!request.currentUser) {
-        return reply.status(401).send({ message: 'Authentification requise.' });
+        return reply.status(403).send({ message: 'Propriétaire requis.' });
       }
 
       try {
@@ -303,7 +317,7 @@ export default async function projectsRoutes(server: FastifyInstance) {
     { preHandler: server.authenticate },
     async (request, reply) => {
       if (!request.currentUser) {
-        return reply.status(401).send({ message: 'Authentification requise.' });
+        return reply.status(403).send({ message: 'Propriétaire requis.' });
       }
 
       try {
@@ -325,7 +339,7 @@ export default async function projectsRoutes(server: FastifyInstance) {
     { preHandler: server.authenticate },
     async (request, reply) => {
       if (!request.currentUser) {
-        return reply.status(401).send({ message: 'Authentification requise.' });
+        return reply.status(403).send({ message: 'Propriétaire requis.' });
       }
 
       try {

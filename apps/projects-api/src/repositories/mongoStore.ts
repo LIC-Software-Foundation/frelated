@@ -6,7 +6,13 @@ import {
   type MongoClientOptions,
 } from 'mongodb';
 import { env } from '../config/env';
-import type { ProjectCollaborator, ProjectFile } from '../domain/models';
+import type {
+  AppNotificationRecord,
+  GuestInvitationRecord,
+  ProjectCollaborator,
+  ProjectFile,
+  ProjectJoinLinkRecord,
+} from '../domain/models';
 import {
   decryptString,
   encryptString,
@@ -51,6 +57,46 @@ interface MongoProjectFileDocument extends Document {
   type: ProjectFile['type'];
   createdAt: string;
   contentEncrypted: EncryptedValue;
+}
+
+interface MongoGuestInvitationDocument extends Document {
+  _id: string;
+  projectId: string;
+  email: string;
+  tokenHash: string;
+  role: 'editor';
+  status: 'active' | 'revoked';
+  createdAt: string;
+  expiresAt?: string;
+  revokedAt?: string;
+  lastUsedAt?: string;
+  invitedByUserId: string;
+  invitedByEmail: string;
+}
+
+interface MongoProjectJoinLinkDocument extends Document {
+  _id: string;
+  projectId: string;
+  tokenHash: string;
+  role: 'editor';
+  createdAt: string;
+  expiresAt?: string;
+  revokedAt?: string;
+  createdByUserId: string;
+}
+
+interface MongoAppNotificationDocument extends Document {
+  _id: string;
+  type: AppNotificationRecord['type'];
+  recipientEmail: string;
+  read: boolean;
+  createdAt: string;
+  projectId: string;
+  projectName: string;
+  requesterName: string;
+  requesterEmail: string;
+  collaboratorId: string;
+  ownerEmail: string;
 }
 
 const toProjectFileDocumentId = (projectId: string, fileId: string) =>
@@ -165,6 +211,12 @@ class MongoStore {
     const projects = db.collection<MongoProjectDocument>('projects');
     const projectFiles =
       db.collection<MongoProjectFileDocument>('projectFiles');
+    const guestInvitations =
+      db.collection<MongoGuestInvitationDocument>('guestInvitations');
+    const projectJoinLinks =
+      db.collection<MongoProjectJoinLinkDocument>('projectJoinLinks');
+    const notifications =
+      db.collection<MongoAppNotificationDocument>('appNotifications');
 
     await projects.createIndex(
       { ownerEmail: 1 },
@@ -177,6 +229,34 @@ class MongoStore {
     await projectFiles.createIndex(
       { projectId: 1, fileId: 1 },
       { unique: true, name: 'uniq_project_file' },
+    );
+    await guestInvitations.createIndex(
+      { tokenHash: 1 },
+      { unique: true, name: 'uniq_guest_invitation_token_hash' },
+    );
+    await guestInvitations.createIndex(
+      { projectId: 1, createdAt: -1 },
+      { name: 'idx_guest_invitations_project' },
+    );
+    await guestInvitations.createIndex(
+      { projectId: 1, email: 1, status: 1 },
+      { name: 'idx_guest_invitations_email_status' },
+    );
+    await guestInvitations.createIndex(
+      { expiresAt: 1 },
+      { name: 'idx_guest_invitations_expiration' },
+    );
+    await projectJoinLinks.createIndex(
+      { tokenHash: 1 },
+      { unique: true, name: 'uniq_project_join_link_token_hash' },
+    );
+    await notifications.createIndex(
+      { recipientEmail: 1, createdAt: -1 },
+      { name: 'idx_notifications_recipient_created' },
+    );
+    await projectJoinLinks.createIndex(
+      { projectId: 1, revokedAt: 1 },
+      { name: 'idx_project_join_links_project' },
     );
     await projectFiles.createIndex(
       { projectId: 1 },
@@ -191,6 +271,24 @@ class MongoStore {
   private async projectFilesCollection() {
     return (await this.getDb()).collection<MongoProjectFileDocument>(
       'projectFiles',
+    );
+  }
+
+  private async appNotificationsCollection() {
+    return (await this.getDb()).collection<MongoAppNotificationDocument>(
+      'appNotifications',
+    );
+  }
+
+  private async guestInvitationsCollection() {
+    return (await this.getDb()).collection<MongoGuestInvitationDocument>(
+      'guestInvitations',
+    );
+  }
+
+  private async projectJoinLinksCollection() {
+    return (await this.getDb()).collection<MongoProjectJoinLinkDocument>(
+      'projectJoinLinks',
     );
   }
 
@@ -420,6 +518,138 @@ class MongoStore {
   async deleteProject(projectId: string): Promise<void> {
     await (await this.projectsCollection()).deleteOne({ _id: projectId });
     await this.deleteProjectFiles(projectId);
+    await (await this.guestInvitationsCollection()).deleteMany({ projectId });
+    await (await this.projectJoinLinksCollection()).deleteMany({ projectId });
+    await (await this.appNotificationsCollection()).deleteMany({ projectId });
+  }
+
+  async insertNotification(notification: AppNotificationRecord): Promise<void> {
+    await (
+      await this.appNotificationsCollection()
+    ).insertOne({ ...notification, _id: notification.id });
+  }
+
+  async listNotifications(
+    recipientEmail: string,
+  ): Promise<AppNotificationRecord[]> {
+    const notifications = await (await this.appNotificationsCollection())
+      .find({ recipientEmail: recipientEmail.trim().toLowerCase() })
+      .sort({ createdAt: -1 })
+      .limit(100)
+      .toArray();
+    return notifications.map(({ _id: id, ...notification }) => ({
+      id,
+      ...notification,
+    }));
+  }
+
+  async markNotificationsRead(recipientEmail: string): Promise<void> {
+    await (
+      await this.appNotificationsCollection()
+    ).updateMany(
+      { recipientEmail: recipientEmail.trim().toLowerCase(), read: false },
+      { $set: { read: true } },
+    );
+  }
+
+  async deleteNotification(
+    notificationId: string,
+    recipientEmail: string,
+  ): Promise<boolean> {
+    const result = await (
+      await this.appNotificationsCollection()
+    ).deleteOne({
+      _id: notificationId,
+      recipientEmail: recipientEmail.trim().toLowerCase(),
+    });
+    return result.deletedCount > 0;
+  }
+
+  async insertGuestInvitation(
+    invitation: GuestInvitationRecord,
+  ): Promise<void> {
+    await (
+      await this.guestInvitationsCollection()
+    ).insertOne({
+      ...invitation,
+      _id: invitation.id,
+    });
+  }
+
+  async listGuestInvitations(
+    projectId: string,
+  ): Promise<GuestInvitationRecord[]> {
+    const invitations = await (await this.guestInvitationsCollection())
+      .find({ projectId })
+      .sort({ createdAt: -1 })
+      .toArray();
+    return invitations.map(({ _id: id, ...invitation }) => ({
+      id,
+      ...invitation,
+    }));
+  }
+
+  async findGuestInvitationById(
+    invitationId: string,
+  ): Promise<GuestInvitationRecord | null> {
+    const invitation = await (
+      await this.guestInvitationsCollection()
+    ).findOne({ _id: invitationId });
+    if (!invitation) return null;
+    const { _id: id, ...record } = invitation;
+    return { id, ...record };
+  }
+
+  async findGuestInvitationByTokenHash(
+    tokenHash: string,
+  ): Promise<GuestInvitationRecord | null> {
+    const invitation = await (
+      await this.guestInvitationsCollection()
+    ).findOne({ tokenHash });
+    if (!invitation) return null;
+    const { _id: id, ...record } = invitation;
+    return { id, ...record };
+  }
+
+  async updateGuestInvitation(
+    invitationId: string,
+    patch: Partial<
+      Pick<GuestInvitationRecord, 'status' | 'revokedAt' | 'lastUsedAt'>
+    >,
+  ): Promise<boolean> {
+    const result = await (
+      await this.guestInvitationsCollection()
+    ).updateOne({ _id: invitationId }, { $set: patch });
+    return result.matchedCount > 0;
+  }
+
+  async insertProjectJoinLink(link: ProjectJoinLinkRecord): Promise<void> {
+    await (
+      await this.projectJoinLinksCollection()
+    ).insertOne({
+      ...link,
+      _id: link.id,
+    });
+  }
+
+  async revokeProjectJoinLinks(projectId: string, revokedAt: string) {
+    await (
+      await this.projectJoinLinksCollection()
+    ).updateMany(
+      { projectId, revokedAt: { $exists: false } },
+      { $set: { revokedAt } },
+    );
+  }
+
+  async findProjectJoinLinkByTokenHash(
+    tokenHash: string,
+  ): Promise<ProjectJoinLinkRecord | null> {
+    const link = await (
+      await this.projectJoinLinksCollection()
+    ).findOne({ tokenHash });
+    if (!link) return null;
+    const { _id: id, ...record } = link;
+    return { id, ...record };
   }
 
   private flattenFiles(

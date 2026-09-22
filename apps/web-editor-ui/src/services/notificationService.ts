@@ -1,4 +1,6 @@
 import type { AppNotification } from '@frelated/types';
+import { apiFetch } from './api/http';
+import { readApiSession } from './api/sessionStorage';
 
 const STORAGE_KEY = 'frelated_notifications';
 
@@ -25,6 +27,26 @@ export function saveNotifications(notifications: AppNotification[]): void {
 
 export function clearNotifications(): void {
   localStorage.removeItem(STORAGE_KEY);
+}
+
+export async function loadServerNotifications(): Promise<AppNotification[]> {
+  if (readApiSession()?.kind !== 'user') return [];
+  const response = await apiFetch<{ notifications: AppNotification[] }>(
+    '/notifications',
+  );
+  return response.notifications;
+}
+
+export async function markServerNotificationsRead(): Promise<void> {
+  if (readApiSession()?.kind !== 'user') return;
+  await apiFetch<void>('/notifications/read-all', { method: 'POST' });
+}
+
+export async function deleteServerNotification(id: string): Promise<void> {
+  if (readApiSession()?.kind !== 'user') return;
+  await apiFetch<void>(`/notifications/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
 }
 
 /** Add a notification directly (mock mode or local dedup). */

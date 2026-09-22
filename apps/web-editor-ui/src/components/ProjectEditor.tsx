@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { EditorView, basicSetup } from 'codemirror';
 import { Compartment, EditorState } from '@codemirror/state';
 import { latex } from 'codemirror-lang-latex';
@@ -7,10 +7,15 @@ import { yCollab } from 'y-codemirror.next';
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 import { WifiOff } from 'lucide-react';
-import { User, Collaborator } from '@frelated/types';
+import type {
+  Collaborator,
+  EditorIdentity,
+  PdfSyncSourcePosition,
+} from '@frelated/types';
 import { ProjectFile, ProjectWithFiles, CollaboratorWithColor } from '../types';
 import { readApiSession } from '../services/api/sessionStorage';
 import EditorToolbar from './EditorToolbar';
+import { createProofreadingExtension } from '../proofreading/extension';
 
 // Shape of each entry in the Yjs awareness map
 interface AwarenessState {
@@ -20,9 +25,12 @@ interface AwarenessState {
 interface ProjectEditorProps {
   project: ProjectWithFiles;
   file: ProjectFile;
-  user: User;
+  filePath: string;
+  user: EditorIdentity;
   onContentChange: (content: string) => void;
   onCollaboratorsChange: (users: Collaborator[]) => void;
+  onSyncToPdf?: (position: PdfSyncSourcePosition) => void;
+  revealPosition?: { line: number; column?: number; requestId: number };
 }
 
 const CURSOR_COLORS = [
@@ -108,9 +116,12 @@ const normalizePresenceUsers = (states: AwarenessState[]) =>
 const ProjectEditor: React.FC<ProjectEditorProps> = ({
   project,
   file,
+  filePath,
   user,
   onContentChange,
   onCollaboratorsChange,
+  onSyncToPdf,
+  revealPosition,
 }) => {
   const editorRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -119,6 +130,7 @@ const ProjectEditor: React.FC<ProjectEditorProps> = ({
   // One Compartment instance per component lifetime — safe to reuse across
   // editor recreations because Compartment is just an identity token.
   const themeCompartmentRef = useRef(new Compartment());
+  const proofreadingCompartmentRef = useRef(new Compartment());
 
   const onContentChangeRef = useRef(onContentChange);
   useEffect(() => {
@@ -140,19 +152,29 @@ const ProjectEditor: React.FC<ProjectEditorProps> = ({
   );
   const [isDark, setIsDark] = useState(false);
   const [fontSize, setFontSize] = useState(15);
+  const [proofreadingEnabled, setProofreadingEnabled] = useState(true);
+  const [proofreadingLanguage, setProofreadingLanguage] = useState<
+    'fr' | 'en' | 'auto'
+  >('fr');
   const [liveAccess, setLiveAccess] = useState<
     'none' | 'viewer' | 'editor' | null
   >(null);
   const normalizedUserEmail = user.email.trim().toLowerCase();
+  const guestUser = 'kind' in user && user.kind === 'guest';
   const canEdit = liveAccess
     ? liveAccess === 'editor'
-    : project.owner.trim().toLowerCase() === normalizedUserEmail ||
+    : guestUser ||
+      project.owner.trim().toLowerCase() === normalizedUserEmail ||
       project.collaborators.some(
         (collaborator) =>
           collaborator.email?.trim().toLowerCase() === normalizedUserEmail &&
           collaborator.status !== 'pending' &&
           collaborator.role !== 'viewer',
       );
+  const proofreadingExtension = useMemo(
+    () => createProofreadingExtension({ language: proofreadingLanguage }),
+    [proofreadingLanguage],
+  );
 
   useEffect(() => {
     setLiveAccess(null);
@@ -187,6 +209,34 @@ const ProjectEditor: React.FC<ProjectEditorProps> = ({
     });
   }, [isDark]);
 
+  useEffect(() => {
+    if (!viewRef.current) return;
+    viewRef.current.dispatch({
+      effects: proofreadingCompartmentRef.current.reconfigure(
+        proofreadingEnabled && file.type === 'tex' ? proofreadingExtension : [],
+      ),
+    });
+  }, [file.type, proofreadingEnabled, proofreadingExtension]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view || !revealPosition) return;
+    const lineNumber = Math.min(
+      Math.max(1, revealPosition.line),
+      view.state.doc.lines,
+    );
+    const line = view.state.doc.line(lineNumber);
+    const anchor = Math.min(
+      line.to,
+      line.from + Math.max(0, revealPosition.column ?? 0),
+    );
+    view.dispatch({
+      selection: { anchor },
+      effects: EditorView.scrollIntoView(anchor, { y: 'center' }),
+    });
+    view.focus();
+  }, [isConnected, revealPosition]);
+
   // Reinitialize editor only when the document identity changes.
   // Recreating the Yjs doc on every content update breaks collaborative sync.
   // isDark is intentionally absent from deps — theme updates are handled by
@@ -202,10 +252,13 @@ const ProjectEditor: React.FC<ProjectEditorProps> = ({
     const doc = new Y.Doc();
     const yText = doc.getText('codemirror');
     const themeCompartment = themeCompartmentRef.current;
+    const proofreadingCompartment = proofreadingCompartmentRef.current;
 
     const localUser: CollaboratorWithColor = {
       name: user.name,
       email: user.email,
+      kind: guestUser ? 'guest' : 'user',
+      guestInvitationId: guestUser ? user.guestInvitationId : undefined,
       color: getPresenceColor(user.email),
       colorLight: `${getPresenceColor(user.email)}33`,
       isOnline: true,
@@ -225,6 +278,27 @@ const ProjectEditor: React.FC<ProjectEditorProps> = ({
       // Theme is managed via Compartment so it can be swapped without
       // rebuilding the editor or the WebSocket provider.
       themeCompartment.of(isDark ? [oneDark] : []),
+      proofreadingCompartment.of(
+        proofreadingEnabled && file.type === 'tex' ? proofreadingExtension : [],
+      ),
+      EditorView.domEventHandlers({
+        mousedown(event, view) {
+          if (!(event.ctrlKey || event.metaKey) || !onSyncToPdf) return false;
+          const position = view.posAtCoords({
+            x: event.clientX,
+            y: event.clientY,
+          });
+          if (position === null) return false;
+          const line = view.state.doc.lineAt(position);
+          event.preventDefault();
+          onSyncToPdf({
+            file: filePath,
+            line: line.number,
+            column: position - line.from,
+          });
+          return true;
+        },
+      }),
       EditorView.updateListener.of((update) => {
         // Skip the initial Yjs seed transaction to avoid overwriting newer
         // content with a stale REST snapshot.
@@ -377,6 +451,54 @@ const ProjectEditor: React.FC<ProjectEditorProps> = ({
         </div>
         <div className="flex items-center gap-4">
           <span>{collaborators.length} en ligne</span>
+          {file.type === 'tex' && onSyncToPdf && (
+            <button
+              type="button"
+              className="text-sky-400 hover:text-sky-300"
+              title="Synchroniser la position du curseur avec le PDF (Ctrl/Cmd + clic)"
+              onClick={() => {
+                const view = viewRef.current;
+                if (!view) return;
+                const position = view.state.selection.main.head;
+                const line = view.state.doc.lineAt(position);
+                onSyncToPdf({
+                  file: filePath,
+                  line: line.number,
+                  column: position - line.from,
+                });
+              }}
+            >
+              Sync PDF
+            </button>
+          )}
+          {file.type === 'tex' && (
+            <>
+              <button
+                type="button"
+                className={
+                  proofreadingEnabled ? 'text-emerald-400' : 'text-slate-500'
+                }
+                onClick={() => setProofreadingEnabled((enabled) => !enabled)}
+                title="Activer ou désactiver le correcteur"
+              >
+                Correcteur {proofreadingEnabled ? 'activé' : 'désactivé'}
+              </button>
+              <select
+                aria-label="Langue du correcteur"
+                className="bg-[#1b2635] text-slate-300"
+                value={proofreadingLanguage}
+                onChange={(event) =>
+                  setProofreadingLanguage(
+                    event.target.value as 'fr' | 'en' | 'auto',
+                  )
+                }
+              >
+                <option value="fr">Français</option>
+                <option value="en">English</option>
+                <option value="auto">Auto</option>
+              </select>
+            </>
+          )}
           <span className="text-slate-600">LaTeX</span>
         </div>
       </div>

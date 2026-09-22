@@ -48,18 +48,27 @@ Copier l'exemple et l'adapter :
 cp apps/projects-api/src/.env.example apps/projects-api/src/.env
 ```
 
-| Variable              | Valeur par défaut                                   | Description                                              |
-| --------------------- | --------------------------------------------------- | -------------------------------------------------------- |
-| `PERSISTENCE_DRIVER`  | `mongodb`                                           | Driver de persistance : `mongodb` ou `prisma`            |
-| `MONGODB_URL`         | `mongodb://localhost:27017/frelated`                | URI de connexion MongoDB                                 |
-| `MONGODB_DB_NAME`     | `frelated`                                          | Nom de la base MongoDB                                   |
-| `MONGODB_REQUIRE_TLS` | `false`                                             | Activer TLS pour MongoDB (prod : `true`)                 |
-| `MONGODB_TLS_CA_FILE` | _(vide)_                                            | Chemin vers le certificat CA TLS                         |
-| `DATABASE_URL`        | `mysql://frelated:frelated@localhost:3306/frelated` | URI MySQL pour Prisma (utilisateurs / auth)              |
-| `AUTH_SECRET`         | `change-me`                                         | **Secret de signature des tokens JWT** — changer en prod |
-| `DATA_ENCRYPTION_KEY` | `change-me-with-a-long-random-secret`               | **Clé de chiffrement AES-256** — changer en prod         |
-| `COLLAB_STORE_ROOT`   | `/var/lib/frelated/collab-store`                    | Répertoire de persistance Yjs locale                     |
-| `FRONTEND_ORIGIN`     | `http://localhost:5173`                             | Origine CORS autorisée                                   |
+| Variable                        | Valeur par défaut                                   | Description                                              |
+| ------------------------------- | --------------------------------------------------- | -------------------------------------------------------- |
+| `PERSISTENCE_DRIVER`            | `mongodb`                                           | Driver de persistance : `mongodb` ou `prisma`            |
+| `MONGODB_URL`                   | `mongodb://localhost:27017/frelated`                | URI de connexion MongoDB                                 |
+| `MONGODB_DB_NAME`               | `frelated`                                          | Nom de la base MongoDB                                   |
+| `MONGODB_REQUIRE_TLS`           | `false`                                             | Activer TLS pour MongoDB (prod : `true`)                 |
+| `MONGODB_TLS_CA_FILE`           | _(vide)_                                            | Chemin vers le certificat CA TLS                         |
+| `DATABASE_URL`                  | `mysql://frelated:frelated@localhost:3306/frelated` | URI MySQL pour Prisma (utilisateurs / auth)              |
+| `AUTH_SECRET`                   | `change-me`                                         | **Secret de signature des tokens JWT** — changer en prod |
+| `DATA_ENCRYPTION_KEY`           | `change-me-with-a-long-random-secret`               | **Clé de chiffrement AES-256** — changer en prod         |
+| `COLLAB_STORE_ROOT`             | `/var/lib/frelated/collab-store`                    | Répertoire de persistance Yjs locale                     |
+| `FRONTEND_ORIGIN`               | `http://localhost:5173`                             | Origine CORS autorisée                                   |
+| `APP_PUBLIC_URL`                | `http://localhost:5173`                             | Base des liens envoyés par email                         |
+| `GUEST_INVITATION_TTL_HOURS`    | `168`                                               | Durée de validité d’une invitation invitée               |
+| `PROJECT_MAX_GUEST_INVITATIONS` | `10`                                                | Invitations invitées actives max par projet              |
+| `GUEST_SESSION_TTL_HOURS`       | `12`                                                | Durée maximale d’une session invitée                     |
+| `PROJECT_JOIN_LINK_TTL_HOURS`   | `168`                                               | Durée d’un lien collaborateur sécurisé                   |
+| `PROJECT_MAX_PARTICIPANTS`      | `0`                                                 | Participants max par projet (`0` = illimité)             |
+| `LANGUAGETOOL_URL`              | `http://localhost:8010/v2/check`                    | Endpoint LanguageTool, auto-hébergé ou distant           |
+| `LANGUAGETOOL_API_KEY`          | _(vide)_                                            | Clé fournisseur, conservée exclusivement côté API        |
+| `SMTP_HOST` / `SMTP_PORT`       | `mailhog` / `1025` avec Docker                      | Transport des invitations email                          |
 
 > **Sécurité** : `AUTH_SECRET` et `DATA_ENCRYPTION_KEY` doivent être des chaînes longues et aléatoires en production.
 > Générer avec : `openssl rand -base64 48`
@@ -187,6 +196,34 @@ pnpm --filter @frelated/projects-api test
 ## Compilation distribuée
 
 La compilation réelle utilise Redis/BullMQ et des workers LaTeX. Voir [la configuration et le fonctionnement](docs/Compilation.md).
+
+### Correcteur, email de développement et SyncTeX
+
+Le correcteur extrait uniquement la prose des fichiers LaTeX, puis appelle
+LanguageTool via l’API backend. Aucune clé fournisseur n’est envoyée au
+navigateur. `run-docker.sh` démarre LanguageTool et MailHog automatiquement :
+
+```bash
+./run-docker.sh up
+```
+
+Utiliser `./run-docker.sh up --no-tools` pour les exclure. L’interface MailHog
+est disponible sur `http://localhost:8025`. Lorsque l’API tourne directement
+sur l’hôte, configurer `SMTP_HOST=localhost`.
+
+SyncTeX est activé pour pdfLaTeX, XeLaTeX et LuaLaTeX. Le conteneur API inclut
+le CLI `synctex`; pour une exécution native, installer les binaires TeX Live.
+Le PDF et l’index `.synctex.gz` sont chiffrés dans Redis et liés au même job.
+
+### Invités et collaborateurs
+
+Un collaborateur possède un compte et une entrée permanente dans l’ACL du
+projet. Un invité possède une `GuestInvitation` MongoDB distincte, n’apparaît
+pas dans cette ACL et reçoit une session limitée à un seul projet. Révoquer
+l’invitation ferme ses WebSockets par identifiant d’invitation et ne retire
+jamais les droits d’un compte portant la même adresse email. Les liens
+collaborateur sont également secrets et hashés; l’ancienne URL basée sur
+`ownerEmail/projectId` reste transitoire et ne donne aucun accès automatique.
 
 ## Fonctionnalités
 

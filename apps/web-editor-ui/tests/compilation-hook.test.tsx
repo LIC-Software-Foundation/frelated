@@ -41,6 +41,7 @@ it('ignores older results, retains the PDF on error and loads collaborator resul
     }),
   );
   await waitFor(() => expect(result.current.pdfUrl).toBe('blob:pdf'));
+  expect(result.current.displayedPdfJobId).toBe('second');
   act(() =>
     mock.listener?.({
       status: 'success',
@@ -59,6 +60,7 @@ it('ignores older results, retains the PDF on error and loads collaborator resul
     }),
   );
   expect(result.current.pdfUrl).toBe('blob:pdf');
+  expect(result.current.displayedPdfJobId).toBe('second');
   act(() =>
     mock.listener?.({
       status: 'error',
@@ -92,5 +94,6 @@ it('never displays a delayed PDF after changing project', async () => {
   rerender({ id: 'second' });
   await act(async () => resolvePdf('blob:old'));
   expect(result.current.pdfUrl).toBeUndefined();
+  expect(result.current.displayedPdfJobId).toBeUndefined();
   expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:old');
 });

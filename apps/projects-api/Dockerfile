@@ -37,7 +37,7 @@ ENV NODE_ENV=production
 ENV HUSKY=0
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends openssl \
+  && apt-get install -y --no-install-recommends openssl texlive-binaries \
   && rm -rf /var/lib/apt/lists/*
 
 RUN corepack enable

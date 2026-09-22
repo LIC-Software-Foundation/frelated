@@ -64,11 +64,6 @@ const ProjectsPage: React.FC<ProjectsPageProps> = ({ user, onLogout }) => {
   const [projectToShare, setProjectToShare] = useState<ProjectWithFiles | null>(
     null,
   );
-  const [linkCopied, setLinkCopied] = useState(false);
-
-  const shareLink = projectToShare
-    ? `${window.location.origin}/project/${projectToShare.owner}/${projectToShare.id}`
-    : '';
 
   // ── Pending collaboration requests (owned projects only) ──
   const pendingProjects = projects.filter(
@@ -133,28 +128,9 @@ const ProjectsPage: React.FC<ProjectsPageProps> = ({ user, onLogout }) => {
 
   const resetShareState = () => {
     setProjectToShare(null);
-    setLinkCopied(false);
   };
-
-  const handleCopyShareLink = async (nextShareLink = shareLink) => {
-    if (!nextShareLink) return;
-
-    try {
-      await navigator.clipboard.writeText(nextShareLink);
-      setLinkCopied(true);
-      window.setTimeout(() => setLinkCopied(false), 2000);
-    } catch (error) {
-      console.error(error);
-      toast('Impossible de copier le lien de partage.', 'error');
-    }
-  };
-
-  const handleShare = async (project: ProjectWithFiles) => {
-    const nextShareLink = `${window.location.origin}/project/${project.owner}/${project.id}`;
-
+  const handleShare = (project: ProjectWithFiles) => {
     setProjectToShare(project);
-    setLinkCopied(false);
-    await handleCopyShareLink(nextShareLink);
   };
 
   const handleLogout = () => {
@@ -550,10 +526,8 @@ const ProjectsPage: React.FC<ProjectsPageProps> = ({ user, onLogout }) => {
 
       <ProjectShareModal
         isOpen={Boolean(projectToShare)}
+        projectId={projectToShare?.id}
         projectName={projectToShare?.name}
-        shareLink={shareLink}
-        linkCopied={linkCopied}
-        onCopy={() => void handleCopyShareLink()}
         onClose={resetShareState}
       />
     </div>
