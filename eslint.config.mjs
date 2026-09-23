@@ -23,6 +23,13 @@ export default [
     ],
   },
   {
+    // Standalone Node scripts (not React source, not run through the
+    // Playwright test runner's TS transform) — need Node globals like
+    // `process`, unlike the rest of this app which is browser-only.
+    files: ['apps/web-editor-ui/e2e/**/*.mjs'],
+    languageOptions: { globals: globals.node },
+  },
+  {
     files: ['apps/web-app/**/*.{ts,tsx}'],
     settings: { react: { version: '18.3' } },
     languageOptions: {
