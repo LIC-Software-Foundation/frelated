@@ -6,7 +6,7 @@
 
 ## Architecture
 
-Monorepo **pnpm workspaces** composé de 4 applications et d’un worker de compilation :
+Monorepo **pnpm workspaces** composé de 4 applications, d’un worker de compilation et d’un service d’autoscaling de ces workers :
 
 | App                      | Port   | Rôle                                             |
 | ------------------------ | ------ | ------------------------------------------------ |
@@ -197,6 +197,10 @@ pnpm --filter @frelated/projects-api test
 
 La compilation réelle utilise Redis/BullMQ et des workers LaTeX. Voir [la configuration et le fonctionnement](docs/Compilation.md).
 
+Le nombre de workers actifs est ajusté automatiquement selon la charge par
+`apps/compilation-autoscaler`, sans jamais mettre la machine hôte en danger.
+Voir [Autoscaling](docs/Autoscaling.md).
+
 ### Correcteur, email de développement et SyncTeX
 
 Le correcteur extrait uniquement la prose des fichiers LaTeX, puis appelle
@@ -254,6 +258,11 @@ frelated/
 │   │   └── tests/
 │   ├── collab-server/         # WebSocket Yjs
 │   │   └── src/index.ts
+│   ├── compilation-autoscaler/ # Autoscaling des workers via l'API Docker
+│   │   └── src/
+│   │       ├── domain/         # Décision pure (scalingPolicy)
+│   │       ├── adapters/       # BullMQ, ressources hôte, Docker
+│   │       └── services/       # Boucle d'orchestration
 │   ├── web-editor-ui/         # Interface React
 │   │   └── src/
 │   │       ├── components/    # ProjectEditor, Dashboard, …

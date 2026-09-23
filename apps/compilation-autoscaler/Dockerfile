@@ -23,11 +23,22 @@ RUN pnpm install --no-frozen-lockfile
 
 COPY . .
 
-RUN pnpm --filter @frelated/web-monitoring-ui build
+RUN pnpm --filter @frelated/compilation-autoscaler build
 
-FROM nginx:1.27-alpine AS runner
+FROM node:22-bookworm-slim AS runner
 
-COPY apps/web-monitoring-ui/nginx.conf /etc/nginx/conf.d/default.conf
-COPY --from=builder /app/apps/web-monitoring-ui/dist /usr/share/nginx/html
+ENV NODE_ENV=production
 
-EXPOSE 80
+WORKDIR /app
+
+COPY --from=builder /app /app
+
+WORKDIR /app/apps/compilation-autoscaler
+
+# Runs the compiled output directly with plain `node`, deliberately bypassing
+# the pnpm/corepack shim used at build time: corepack needs a writable cache
+# directory it does not have here, since this container's root filesystem is
+# mounted read-only (see docker-compose.yml). Same approach as
+# apps/compilation-worker/Dockerfile, which invokes its runtime (tsx) binary
+# directly rather than through `pnpm run`.
+CMD ["node", "dist/index.js"]

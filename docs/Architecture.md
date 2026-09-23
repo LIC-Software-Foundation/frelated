@@ -105,6 +105,7 @@ Les hooks (`useProjects`, `useCompilation`) ne dependent que de ces contrats et 
 ## Limites actuelles
 
 - La compilation PDF utilise Redis/BullMQ, des workers latexmk et des notifications WebSocket via l’API. Voir [Compilation](Compilation.md).
+- Le nombre de workers de compilation est ajusté automatiquement par `apps/compilation-autoscaler` selon la profondeur de la file et les ressources disponibles sur la machine hôte. Voir [Autoscaling](Autoscaling.md).
 - La verification fine des droits projet dans le `collab-server` peut encore etre renforcee avec un collab token scope par projet/fichier.
 
 ## Prochaines evolutions recommandees
