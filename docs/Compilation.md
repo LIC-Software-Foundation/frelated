@@ -36,6 +36,8 @@ docker compose --env-file .env.docker up -d --no-build --scale compilation-worke
 
 Chaque worker traite un job à la fois. Aucune surveillance de dossier partagé n'est nécessaire : les instantanés transitent par Redis.
 
+Ce scaling manuel n'est plus nécessaire en usage normal : `apps/compilation-autoscaler` ajuste automatiquement le nombre de workers selon la profondeur de la file et les ressources disponibles. Voir [Autoscaling](Autoscaling.md).
+
 ```bash
 bash run-docker.sh logs compilation-worker
 bash run-docker.sh logs redis

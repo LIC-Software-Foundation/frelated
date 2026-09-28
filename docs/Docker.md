@@ -4,6 +4,7 @@
 
 - `redis` : file BullMQ, paramètres et derniers résultats chiffrés
 - `compilation-worker` : latexmk, pdfLaTeX, XeLaTeX, LuaLaTeX et BibTeX/Biber
+- `compilation-autoscaler` : ajuste le nombre de workers selon la charge, via le socket Docker (voir [Autoscaling](Autoscaling.md))
 - `languagetool` : correcteur linguistique local
 - `mailhog` : serveur SMTP local et boîte de réception de développement
 

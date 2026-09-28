@@ -118,3 +118,4 @@ Temporary Items
 # Browser test artifacts
 playwright-report/
 test-results/
+apps/web-editor-ui/e2e/autoscaler-demo-output/

@@ -47,7 +47,7 @@ compose() {
   docker compose --env-file "${ENV_FILE}" "$@"
 }
 
-CORE_SERVICES="redis compilation-worker mysql mongodb projects-api collab-server web-editor-ui web-monitoring-ui"
+CORE_SERVICES="redis compilation-worker compilation-autoscaler mysql mongodb projects-api collab-server web-editor-ui web-monitoring-ui"
 UP_SERVICES="${COMPOSE_ARGS}"
 if [ "${NO_TOOLS}" = "true" ] && [ -z "${COMPOSE_ARGS}" ]; then
   UP_SERVICES="${CORE_SERVICES}"

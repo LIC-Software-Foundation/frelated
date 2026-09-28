@@ -64,6 +64,65 @@ services:
       DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY}
       COMPILATION_TIMEOUT_MS: ${COMPILATION_TIMEOUT_MS:-120000}
 
+  compilation-autoscaler:
+    build:
+      context: .
+      dockerfile: apps/compilation-autoscaler/Dockerfile
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    read_only: true
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 64
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    networks:
+      - frelated-network
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3100
+      REDIS_URL: redis://redis:6379
+      COMPILATION_QUEUE_NAME: ${COMPILATION_QUEUE_NAME:-frelated-latex}
+      HEAVY_JOB_PAYLOAD_THRESHOLD_MB: ${AUTOSCALER_HEAVY_JOB_PAYLOAD_THRESHOLD_MB:-3}
+      DOCKER_SOCKET_PATH: /var/run/docker.sock
+      COMPILATION_WORKER_IMAGE: ${COMPILATION_WORKER_IMAGE:-frelated-compilation-worker}
+      COMPILATION_WORKER_NETWORK: frelated-network
+      AUTH_SECRET: ${AUTH_SECRET}
+      DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY}
+      COMPILATION_TIMEOUT_MS: ${COMPILATION_TIMEOUT_MS:-120000}
+      POLL_INTERVAL_MS: ${AUTOSCALER_POLL_INTERVAL_MS:-5000}
+      SCALE_UP_THRESHOLD: ${AUTOSCALER_SCALE_UP_THRESHOLD:-3}
+      SCALE_DOWN_THRESHOLD: ${AUTOSCALER_SCALE_DOWN_THRESHOLD:-3}
+      MIN_WORKERS: ${AUTOSCALER_MIN_WORKERS:-1}
+      MAX_WORKERS: ${AUTOSCALER_MAX_WORKERS:-10}
+      SCALE_COOLDOWN_MS: ${AUTOSCALER_SCALE_COOLDOWN_MS:-30000}
+      ESTIMATED_WORKER_MEMORY_MB: ${AUTOSCALER_ESTIMATED_WORKER_MEMORY_MB:-320}
+      MIN_FREE_MEMORY_AFTER_SCALE_UP_MB: ${AUTOSCALER_MIN_FREE_MEMORY_AFTER_SCALE_UP_MB:-768}
+      MAX_CPU_LOAD_FRACTION_AFTER_SCALE_UP: ${AUTOSCALER_MAX_CPU_LOAD_FRACTION_AFTER_SCALE_UP:-0.85}
+      HEAVY_JOB_COUNT_THRESHOLD: ${AUTOSCALER_HEAVY_JOB_COUNT_THRESHOLD:-2}
+      BUSY_WORKER_CPU_LOAD_THRESHOLD: ${AUTOSCALER_BUSY_WORKER_CPU_LOAD_THRESHOLD:-0.8}
+    ports:
+      - '${COMPILATION_AUTOSCALER_PORT:-3100}:3100'
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3100/health').then((response)=>process.exit(response.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
   mysql:
     image: mysql:8.4
     restart: unless-stopped

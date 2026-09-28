@@ -14,6 +14,7 @@ WORKDIR /app
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/collab-server/package.json apps/collab-server/package.json
+COPY apps/compilation-autoscaler/package.json apps/compilation-autoscaler/package.json
 COPY apps/projects-api/package.json apps/projects-api/package.json
 COPY apps/web-editor-ui/package.json apps/web-editor-ui/package.json
 COPY apps/web-monitoring-ui/package.json apps/web-monitoring-ui/package.json
