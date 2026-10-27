@@ -31,9 +31,15 @@ const orchestratorConfig = {
   image: 'frelated-compilation-worker',
   network: 'frelated-network',
   redisUrl: 'redis://redis:6379',
+  compilationServiceUrl: 'http://compilation-queue-service:3200',
+  compilationServiceToken: 'worker-token',
   authSecret: 'secret',
   dataEncryptionKey: 'secret',
   compilationTimeoutMs: 120000,
+  workerMemoryBytes: 768 * 1024 * 1024,
+  workerNanoCpus: 1_000_000_000,
+  workerPidsLimit: 128,
+  workerTmpfsSizeMb: 384,
   gracefulStopTimeoutSeconds: 130,
 };
 

@@ -1,26 +1,9 @@
-// Full end-to-end validation against the REAL queue technology currently
-// used by the repo (BullMQ/Redis) and the REAL Docker socket: pushes fake
-// jobs onto an isolated test queue and asserts a real compilation-worker
-// container actually appears, then actually disappears once the queue
-// drains.
-//
-// Skipped by default. To run it:
-//   1. `bash run-docker.sh up` at least once, so the `frelated-network`
-//      Docker network exists and the `frelated-compilation-worker` image
-//      is built.
-//   2. A Redis reachable at AUTOSCALER_E2E_REDIS_URL (defaults to
-//      redis://localhost:6379/14 — a DB index distinct from both
-//      production (0) and apps/projects-api's own integration tests (15),
-//      so none of them can interfere with each other).
-//   3. Docker socket access at AUTOSCALER_E2E_DOCKER_SOCKET (defaults to
-//      /var/run/docker.sock).
-//
-//   AUTOSCALER_E2E=1 pnpm --filter @frelated/compilation-autoscaler test:e2e
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { Queue } from 'bullmq';
-import { Redis } from 'ioredis';
+// Optional Docker E2E. Queue depth is exposed through an HTTP boundary,
+// matching production; no Redis/BullMQ client is imported by the autoscaler.
+import { createServer, type Server } from 'node:http';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import Docker from 'dockerode';
-import { BullMqQueueDepthProvider } from '../src/adapters/bullMqQueueDepthProvider.js';
+import { HttpQueueDepthProvider } from '../src/adapters/httpQueueDepthProvider.js';
 import { DockerWorkerOrchestrator } from '../src/adapters/dockerWorkerOrchestrator.js';
 import { HostSystemResourceMonitor } from '../src/adapters/hostSystemResourceMonitor.js';
 import { AutoscalerService } from '../src/services/autoscalerService.js';
@@ -28,151 +11,119 @@ import type { ScalingPolicyConfig } from '../src/domain/scalingPolicy.js';
 import type { Logger } from '../src/logging/logger.js';
 
 const enabled = process.env.AUTOSCALER_E2E === '1';
-
-const redisUrl =
-  process.env.AUTOSCALER_E2E_REDIS_URL || 'redis://localhost:6379/14';
 const dockerSocketPath =
   process.env.AUTOSCALER_E2E_DOCKER_SOCKET || '/var/run/docker.sock';
 const dockerNetwork =
   process.env.COMPILATION_WORKER_NETWORK || 'frelated-network';
 const workerImage =
   process.env.COMPILATION_WORKER_IMAGE || 'frelated-compilation-worker';
-const queueName = 'frelated-latex-autoscaler-e2e-test';
 const managedByLabel = 'com.frelated.managed-by=compilation-autoscaler';
-
 const silentLogger: Logger = {
-  info: (message) => console.log(`[e2e] ${message}`),
-  warn: (message) => console.warn(`[e2e] ${message}`),
-  error: (message, error) => console.error(`[e2e] ${message}`, error),
+  info: () => {},
+  warn: () => {},
+  error: () => {},
   debug: () => {},
 };
 
-describe.skipIf(!enabled)('Compilation autoscaler — end to end', () => {
-  let connection: Redis;
-  let queue: Queue;
+describe.skipIf(!enabled)('Compilation autoscaler — HTTP boundary E2E', () => {
+  let waitingCount = 0;
+  let metricsServer: Server;
+  let metricsUrl: string;
   let docker: Docker;
   let autoscaler: AutoscalerService;
 
-  const config: ScalingPolicyConfig = {
+  const policy: ScalingPolicyConfig = {
     scaleUpThreshold: 3,
     scaleDownThreshold: 3,
     minWorkers: 0,
     maxWorkers: 10,
     cooldownMs: 0,
     estimatedWorkerMemoryBytes: 320 * 1024 * 1024,
-    minFreeMemoryAfterScaleUpBytes: 0, // don't let a constrained CI/dev box block this test on memory
-    maxCpuLoadFractionAfterScaleUp: 100, // same, for CPU
+    minFreeMemoryAfterScaleUpBytes: 0,
+    maxCpuLoadFractionAfterScaleUp: 100,
     heavyJobCountThreshold: 2,
     busyWorkerCpuLoadThreshold: 0.8,
   };
-
-  const countManagedContainers = async (): Promise<number> => {
-    const containers = await docker.listContainers({
-      all: false,
-      filters: { label: [managedByLabel] },
-    });
-    return containers.length;
-  };
-
-  const waitUntil = async (
-    predicate: () => Promise<boolean>,
-    timeoutMs: number,
-  ) => {
-    const start = Date.now();
-    while (Date.now() - start < timeoutMs) {
-      if (await predicate()) return;
-      await new Promise((resolve) => setTimeout(resolve, 500));
-    }
-    throw new Error('Timed out waiting for condition');
-  };
+  const countManaged = async () =>
+    (
+      await docker.listContainers({
+        all: false,
+        filters: { label: [managedByLabel] },
+      })
+    ).length;
 
   beforeAll(async () => {
+    metricsServer = createServer((_request, response) => {
+      response.setHeader('content-type', 'application/json');
+      response.end(JSON.stringify({ waitingCount, heavyWaitingCount: 0 }));
+    });
+    await new Promise<void>((resolve) =>
+      metricsServer.listen(0, '127.0.0.1', resolve),
+    );
+    const address = metricsServer.address();
+    if (!address || typeof address === 'string')
+      throw new Error('metrics server unavailable');
+    metricsUrl = `http://127.0.0.1:${address.port}`;
     docker = new Docker({ socketPath: dockerSocketPath });
     try {
       await docker.createNetwork({ Name: dockerNetwork });
     } catch (error) {
-      // 409 = network already exists, which is the expected case when the
-      // rest of the stack is already running.
-      const status = (error as { statusCode?: number }).statusCode;
-      if (status !== 409) throw error;
+      if ((error as { statusCode?: number }).statusCode !== 409) throw error;
     }
-
-    connection = new Redis(redisUrl, { maxRetriesPerRequest: null });
-    queue = new Queue(queueName, { connection });
-
-    const queueDepthProvider = new BullMqQueueDepthProvider(
-      redisUrl,
-      queueName,
-      3 * 1024 * 1024, // heavyJobPayloadThresholdBytes — not exercised by this test
+    const provider = new HttpQueueDepthProvider(
+      metricsUrl,
+      'token',
+      3000,
       silentLogger,
     );
-    const systemResourceMonitor = new HostSystemResourceMonitor(silentLogger);
-    const workerOrchestrator = new DockerWorkerOrchestrator(
+    const orchestrator = new DockerWorkerOrchestrator(
       {
         socketPath: dockerSocketPath,
         image: workerImage,
         network: dockerNetwork,
-        redisUrl,
-        authSecret: 'e2e-test-secret',
-        dataEncryptionKey: 'e2e-test-secret',
-        compilationTimeoutMs: 120_000,
+        redisUrl: 'redis://redis:6379',
+        compilationServiceUrl: 'http://compilation-queue-service:3200',
+        compilationServiceToken: 'worker-token',
+        authSecret: 'e2e-secret',
+        dataEncryptionKey: 'e2e-secret',
+        compilationTimeoutMs: 120000,
+        workerMemoryBytes: 768 * 1024 * 1024,
+        workerNanoCpus: 1_000_000_000,
+        workerPidsLimit: 128,
+        workerTmpfsSizeMb: 384,
         gracefulStopTimeoutSeconds: 5,
       },
       silentLogger,
     );
-
     autoscaler = new AutoscalerService(
-      queueDepthProvider,
-      systemResourceMonitor,
-      workerOrchestrator,
-      config,
+      provider,
+      new HostSystemResourceMonitor(silentLogger),
+      orchestrator,
+      policy,
       silentLogger,
     );
-  }, 30_000);
-
-  beforeEach(async () => {
-    await queue.drain(true);
-  });
+  }, 30000);
 
   afterAll(async () => {
-    await queue.drain(true);
-    await queue.obliterate({ force: true }).catch(() => {});
-    await queue.close();
-    connection.disconnect();
-
-    // Safety-net cleanup: remove any managed container left over from a
-    // failed assertion so repeated local runs start clean.
-    const leftovers = await docker.listContainers({
+    await new Promise<void>((resolve) => metricsServer?.close(() => resolve()));
+    const leftovers = await docker?.listContainers({
       all: true,
       filters: { label: [managedByLabel] },
     });
-    for (const info of leftovers) {
-      const container = docker.getContainer(info.Id);
-      await container.remove({ force: true }).catch(() => {});
-    }
-  }, 30_000);
+    for (const info of leftovers ?? [])
+      await docker
+        .getContainer(info.Id)
+        .remove({ force: true })
+        .catch(() => {});
+  }, 30000);
 
-  it('creates a real compilation-worker container once the queue backs up beyond the threshold', async () => {
-    expect(await countManagedContainers()).toBe(0);
-
-    for (let i = 0; i < 4; i += 1) {
-      await queue.add('compile', {});
-    }
-
-    const decision = await autoscaler.tick();
-    expect(decision.type).toBe('scale-up');
-
-    await waitUntil(async () => (await countManagedContainers()) === 1, 20_000);
-  }, 45_000);
-
-  it('destroys the extra worker once the queue drains back below the threshold', async () => {
-    expect(await countManagedContainers()).toBe(1);
-
-    await queue.drain(true);
-
-    const decision = await autoscaler.tick();
-    expect(decision.type).toBe('scale-down');
-
-    await waitUntil(async () => (await countManagedContainers()) === 0, 20_000);
-  }, 45_000);
+  it('scales up and down from metrics obtained over HTTP', async () => {
+    expect(await countManaged()).toBe(0);
+    waitingCount = 4;
+    expect((await autoscaler.tick()).type).toBe('scale-up');
+    expect(await countManaged()).toBe(1);
+    waitingCount = 0;
+    expect((await autoscaler.tick()).type).toBe('scale-down');
+    expect(await countManaged()).toBe(0);
+  }, 45000);
 });

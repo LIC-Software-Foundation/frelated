@@ -6,14 +6,15 @@
 
 ## Architecture
 
-Monorepo **pnpm workspaces** composé de 4 applications, d’un worker de compilation et d’un service d’autoscaling de ces workers :
+Monorepo **pnpm workspaces** composé de 4 applications, d’un service de file de compilation, d’un worker et d’un service d’autoscaling :
 
-| App                      | Port   | Rôle                                             |
-| ------------------------ | ------ | ------------------------------------------------ |
-| `apps/projects-api`      | `3000` | API REST Fastify — projets, auth, fichiers       |
-| `apps/collab-server`     | `8080` | Serveur WebSocket Yjs — collaboration temps réel |
-| `apps/web-editor-ui`     | `5173` | Interface React — éditeur LaTeX                  |
-| `apps/web-monitoring-ui` | `5174` | Dashboard de monitoring                          |
+| App                              | Port   | Rôle                                               |
+| -------------------------------- | ------ | -------------------------------------------------- |
+| `apps/projects-api`              | `3000` | API REST Fastify — projets, auth, fichiers         |
+| `apps/collab-server`             | `8080` | Serveur WebSocket Yjs — collaboration temps réel   |
+| `apps/web-editor-ui`             | `5173` | Interface React — éditeur LaTeX                    |
+| `apps/web-monitoring-ui`         | `5174` | Dashboard de monitoring                            |
+| `apps/compilation-queue-service` | `3200` | File BullMQ, état, artefacts et métriques internes |
 
 ---
 
@@ -195,7 +196,7 @@ pnpm --filter @frelated/projects-api test
 
 ## Compilation distribuée
 
-La compilation réelle utilise Redis/BullMQ et des workers LaTeX. Voir [la configuration et le fonctionnement](docs/Compilation.md).
+La compilation réelle passe par un service de file isolé qui encapsule Redis/BullMQ et distribue le travail aux workers LaTeX. Voir [la configuration et le fonctionnement](docs/Compilation.md).
 
 Le nombre de workers actifs est ajusté automatiquement selon la charge par
 `apps/compilation-autoscaler`, sans jamais mettre la machine hôte en danger.
@@ -258,10 +259,11 @@ frelated/
 │   │   └── tests/
 │   ├── collab-server/         # WebSocket Yjs
 │   │   └── src/index.ts
-│   ├── compilation-autoscaler/ # Autoscaling des workers via l'API Docker
+│   ├── compilation-queue-service/ # Propriétaire de BullMQ, état, artefacts et métriques
+│   ├── compilation-autoscaler/ # Autoscaling via métriques HTTP et API Docker
 │   │   └── src/
 │   │       ├── domain/         # Décision pure (scalingPolicy)
-│   │       ├── adapters/       # BullMQ, ressources hôte, Docker
+│   │       ├── adapters/       # API de métriques, ressources hôte, Docker
 │   │       └── services/       # Boucle d'orchestration
 │   ├── web-editor-ui/         # Interface React
 │   │   └── src/

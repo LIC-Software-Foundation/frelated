@@ -27,7 +27,7 @@ src/
 │   ├── ports.ts            # Interfaces (QueueDepthProvider, SystemResourceMonitor, WorkerOrchestrator)
 │   └── scalingPolicy.ts    # Décision pure — sans Docker, sans file réelle, sans vraie machine
 ├── adapters/
-│   ├── bullMqQueueDepthProvider.ts    # Implémentation concrète contre BullMQ/Redis (la file réelle actuelle)
+│   ├── httpQueueDepthProvider.ts      # Lecture de /internal/queue/metrics, sans accès Redis
 │   ├── hostSystemResourceMonitor.ts   # Lecture des ressources hôte via /proc (fallback os.* hors Linux)
 │   └── dockerWorkerOrchestrator.ts    # Création/destruction de conteneurs via l'API Docker
 ├── services/
@@ -37,8 +37,8 @@ src/
 └── index.ts                  # Bootstrap
 ```
 
-Remplacer BullMQ par une autre technologie de file un jour ne demanderait qu'un
-nouvel adaptateur implémentant `QueueDepthProvider` — aucune ligne de
+Remplacer la technologie interne de `compilation-queue-service` ne demande
+aucune modification de l'autoscaler tant que le contrat HTTP reste stable — aucune ligne de
 `scalingPolicy.ts` ni de `autoscalerService.ts` ne serait à modifier
 (Open/Closed). N'importe quelle implémentation de `QueueDepthProvider` ou de
 `SystemResourceMonitor` peut remplacer une autre sans changer le comportement
@@ -82,13 +82,14 @@ document lourd (images, bibliographie, TikZ). Deux signaux indépendants
 comblent ce point, sans jamais avoir besoin de déchiffrer le contenu d'un job
 ni de toucher `apps/projects-api` :
 
-**Signal de taille des jobs** (`bullMqQueueDepthProvider.ts`) — un job en
+**Signal de taille des jobs** (`compilation-queue-service`) — un job en
 attente est considéré « lourd » si son payload, encore chiffré, dépasse
 `HEAVY_JOB_PAYLOAD_THRESHOLD_MB` (3 Mo par défaut). La taille du contenu
 chiffré est directement proportionnelle à la taille du contenu source
 d'origine (le chiffrement AES-GCM ne change pas fondamentalement la taille,
 l'encodage base64 ajoute environ 33%) — aucun déchiffrement n'est donc
-nécessaire, seule la longueur de la chaîne déjà stockée dans Redis est lue.
+nécessaire. Le service de file agrège cette information ; l'autoscaler ne
+reçoit que `heavyWaitingCount`, jamais le payload ni un accès Redis.
 **Limite assumée** : c'est un indice, pas une mesure précise. Un document
 avec beaucoup d'images embarquées en base64 sera détecté ; un document petit
 en taille mais avec un TikZ complexe (coûteux en CPU, pas en octets) ne le
@@ -180,25 +181,27 @@ compilation en cours plutôt que de la perdre.
 Toutes les variables ont une valeur par défaut raisonnable ; voir
 `apps/compilation-autoscaler/.env.example` pour la liste complète.
 
-| Variable                                      | Défaut                        | Rôle                                                                                       |
-| --------------------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------ |
-| `REDIS_URL`                                   | `redis://localhost:6379`      | Connexion à la file de compilation                                                         |
-| `COMPILATION_QUEUE_NAME`                      | `frelated-latex`              | Doit rester synchronisé avec `queueName` dans `apps/projects-api/src/compilation/queue.ts` |
-| `DOCKER_SOCKET_PATH`                          | `/var/run/docker.sock`        | Socket Docker de l'hôte                                                                    |
-| `COMPILATION_WORKER_IMAGE`                    | `frelated-compilation-worker` | Image déjà construite, jamais buildée à la volée                                           |
-| `COMPILATION_WORKER_NETWORK`                  | `frelated-network`            | Réseau Docker auquel attacher les nouveaux workers                                         |
-| `POLL_INTERVAL_MS`                            | `5000`                        | Cadence de la boucle de décision                                                           |
-| `SCALE_UP_THRESHOLD` / `SCALE_DOWN_THRESHOLD` | `3` / `3`                     | Seuils de la file                                                                          |
-| `MIN_WORKERS` / `MAX_WORKERS`                 | `1` / `10`                    | Plancher / plafond (plafond réellement borné à 10, voir plus haut)                         |
-| `SCALE_COOLDOWN_MS`                           | `30000`                       | Anti-flapping                                                                              |
-| `ESTIMATED_WORKER_MEMORY_MB`                  | `320`                         | Empreinte estimée d'un worker de plus                                                      |
-| `MIN_FREE_MEMORY_AFTER_SCALE_UP_MB`           | `768`                         | Marge mémoire exigée après cette empreinte                                                 |
-| `MAX_CPU_LOAD_FRACTION_AFTER_SCALE_UP`        | `0.85`                        | Marge CPU exigée après projection                                                          |
-| `HEAVY_JOB_PAYLOAD_THRESHOLD_MB`              | `3`                           | Taille de payload chiffré à partir de laquelle un job est « lourd »                        |
-| `HEAVY_JOB_COUNT_THRESHOLD`                   | `2`                           | Nombre de jobs lourds qui déclenche seul un scale-up                                       |
-| `BUSY_WORKER_CPU_LOAD_THRESHOLD`              | `0.8`                         | Charge CPU moyenne des workers actifs qui déclenche seule un scale-up                      |
+| Variable                                      | Défaut                        | Rôle                                                                  |
+| --------------------------------------------- | ----------------------------- | --------------------------------------------------------------------- |
+| `COMPILATION_SERVICE_URL`                     | `http://localhost:3200`       | API interne du service de file                                        |
+| `COMPILATION_AUTOSCALER_TOKEN`                | jeton de développement        | Identité limitée à la lecture des métriques                           |
+| `COMPILATION_SERVICE_TIMEOUT_MS`              | `3000`                        | Timeout de lecture des métriques                                      |
+| `COMPILATION_WORKER_REDIS_URL`                | `redis://redis:6379`          | Valeur transmise aux workers créés, jamais utilisée par l'autoscaler  |
+| `DOCKER_SOCKET_PATH`                          | `/var/run/docker.sock`        | Socket Docker de l'hôte                                               |
+| `COMPILATION_WORKER_IMAGE`                    | `frelated-compilation-worker` | Image déjà construite, jamais buildée à la volée                      |
+| `COMPILATION_WORKER_NETWORK`                  | `frelated-network`            | Réseau Docker auquel attacher les nouveaux workers                    |
+| `POLL_INTERVAL_MS`                            | `5000`                        | Cadence de la boucle de décision                                      |
+| `SCALE_UP_THRESHOLD` / `SCALE_DOWN_THRESHOLD` | `3` / `3`                     | Seuils de la file                                                     |
+| `MIN_WORKERS` / `MAX_WORKERS`                 | `1` / `10`                    | Plancher / plafond (plafond réellement borné à 10, voir plus haut)    |
+| `SCALE_COOLDOWN_MS`                           | `30000`                       | Anti-flapping                                                         |
+| `ESTIMATED_WORKER_MEMORY_MB`                  | `320`                         | Empreinte estimée d'un worker de plus                                 |
+| `MIN_FREE_MEMORY_AFTER_SCALE_UP_MB`           | `768`                         | Marge mémoire exigée après cette empreinte                            |
+| `MAX_CPU_LOAD_FRACTION_AFTER_SCALE_UP`        | `0.85`                        | Marge CPU exigée après projection                                     |
+| `HEAVY_JOB_PAYLOAD_THRESHOLD_MB`              | `3`                           | Taille de payload chiffré à partir de laquelle un job est « lourd »   |
+| `HEAVY_JOB_COUNT_THRESHOLD`                   | `2`                           | Nombre de jobs lourds qui déclenche seul un scale-up                  |
+| `BUSY_WORKER_CPU_LOAD_THRESHOLD`              | `0.8`                         | Charge CPU moyenne des workers actifs qui déclenche seule un scale-up |
 
-`AUTH_SECRET`, `DATA_ENCRYPTION_KEY` et `COMPILATION_TIMEOUT_MS` doivent avoir
+`AUTH_SECRET`, `DATA_ENCRYPTION_KEY`, `COMPILATION_WORKER_TOKEN` et `COMPILATION_TIMEOUT_MS` doivent avoir
 les mêmes valeurs que le service `compilation-worker` : elles sont transmises
 telles quelles aux conteneurs créés.
 
@@ -238,10 +241,8 @@ la boucle d'orchestration sans dépendance réelle à Docker, à la file ou à l
 machine (implémentations en mémoire des trois interfaces).
 
 Le test de bout en bout (`tests/autoscaler.e2e.test.ts`) valide le cycle
-complet contre la vraie file BullMQ/Redis et le vrai socket Docker : il monte
-de faux jobs sur une file de test isolée (base Redis et nom de file dédiés,
-pour ne jamais interférer avec la file de production ni avec les tests
-d'intégration de `apps/projects-api`), vérifie qu'un conteneur
+complet contre une vraie API HTTP de métriques et le vrai socket Docker. Il
+fait varier le compteur exposé par cette API, vérifie qu'un conteneur
 `compilation-worker` supplémentaire apparaît réellement, puis qu'il est
 détruit une fois la file vidée. Il est ignoré par défaut :
 

@@ -37,6 +37,51 @@ services:
       timeout: 3s
       retries: 12
 
+  compilation-queue-service:
+    build:
+      context: .
+      dockerfile: apps/compilation-queue-service/Dockerfile
+    restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    mem_limit: 512m
+    cpus: 0.5
+    pids_limit: 128
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    networks:
+      - frelated-network
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 3200
+      REDIS_URL: redis://redis:6379
+      COMPILATION_QUEUE_NAME: ${COMPILATION_QUEUE_NAME:-frelated-latex}
+      DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY}
+      COMPILATION_PROJECTS_API_TOKEN: ${COMPILATION_PROJECTS_API_TOKEN:-frelated-dev-projects-api-token-change-me}
+      COMPILATION_WORKER_TOKEN: ${COMPILATION_WORKER_TOKEN:-frelated-dev-worker-token-change-me}
+      COMPILATION_AUTOSCALER_TOKEN: ${COMPILATION_AUTOSCALER_TOKEN:-frelated-dev-autoscaler-token-change-me}
+      HEAVY_JOB_PAYLOAD_THRESHOLD_MB: ${AUTOSCALER_HEAVY_JOB_PAYLOAD_THRESHOLD_MB:-3}
+    ports:
+      - '${COMPILATION_QUEUE_SERVICE_PORT:-3200}:3200'
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3200/health').then((response)=>process.exit(response.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
   compilation-worker:
     build:
       context: .
@@ -58,8 +103,12 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      compilation-queue-service:
+        condition: service_healthy
     environment:
       REDIS_URL: redis://redis:6379
+      COMPILATION_SERVICE_URL: http://compilation-queue-service:3200
+      COMPILATION_WORKER_TOKEN: ${COMPILATION_WORKER_TOKEN:-frelated-dev-worker-token-change-me}
       AUTH_SECRET: ${AUTH_SECRET}
       DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY}
       COMPILATION_TIMEOUT_MS: ${COMPILATION_TIMEOUT_MS:-120000}
@@ -81,16 +130,18 @@ services:
     networks:
       - frelated-network
     depends_on:
-      redis:
+      compilation-queue-service:
         condition: service_healthy
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       HOST: 0.0.0.0
       PORT: 3100
-      REDIS_URL: redis://redis:6379
-      COMPILATION_QUEUE_NAME: ${COMPILATION_QUEUE_NAME:-frelated-latex}
-      HEAVY_JOB_PAYLOAD_THRESHOLD_MB: ${AUTOSCALER_HEAVY_JOB_PAYLOAD_THRESHOLD_MB:-3}
+      COMPILATION_SERVICE_URL: http://compilation-queue-service:3200
+      COMPILATION_AUTOSCALER_TOKEN: ${COMPILATION_AUTOSCALER_TOKEN:-frelated-dev-autoscaler-token-change-me}
+      COMPILATION_SERVICE_TIMEOUT_MS: ${COMPILATION_SERVICE_TIMEOUT_MS:-3000}
+      COMPILATION_WORKER_REDIS_URL: redis://redis:6379
+      COMPILATION_WORKER_TOKEN: ${COMPILATION_WORKER_TOKEN:-frelated-dev-worker-token-change-me}
       DOCKER_SOCKET_PATH: /var/run/docker.sock
       COMPILATION_WORKER_IMAGE: ${COMPILATION_WORKER_IMAGE:-frelated-compilation-worker}
       COMPILATION_WORKER_NETWORK: frelated-network
@@ -178,7 +229,7 @@ services:
     networks:
       - frelated-network
     depends_on:
-      redis:
+      compilation-queue-service:
         condition: service_healthy
       mysql:
         condition: service_healthy
@@ -196,7 +247,9 @@ services:
       DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY}
       FRONTEND_ORIGIN: ${FRONTEND_ORIGIN}
       COLLAB_SERVER_URL: http://collab-server:8080
-      REDIS_URL: redis://redis:6379
+      COMPILATION_SERVICE_URL: http://compilation-queue-service:3200
+      COMPILATION_PROJECTS_API_TOKEN: ${COMPILATION_PROJECTS_API_TOKEN:-frelated-dev-projects-api-token-change-me}
+      COMPILATION_SERVICE_TIMEOUT_MS: ${COMPILATION_SERVICE_TIMEOUT_MS:-30000}
       PRISMA_AUTO_MIGRATE: ${PRISMA_AUTO_MIGRATE:-true}
       APP_PUBLIC_URL: ${APP_PUBLIC_URL:-http://localhost:5173}
       GUEST_INVITATION_TTL_HOURS: ${GUEST_INVITATION_TTL_HOURS:-168}

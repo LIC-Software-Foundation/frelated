@@ -19,7 +19,7 @@ export interface QueueSnapshot {
   waitingCount: number;
   /**
    * Of those, how many look like "heavy" jobs — a proxy signal, not a
-   * precise measurement (see `bullMqQueueDepthProvider.ts` for how it's
+   * precise measurement (computed by the queue service) for how it's
    * derived). Lets the decision react to a couple of large jobs piling up
    * even while the raw count stays under the normal threshold.
    */

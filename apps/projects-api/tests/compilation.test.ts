@@ -4,7 +4,6 @@ import {
   makeSnapshot,
   settingsSchema,
 } from '../src/compilation/model';
-import { decode, encode } from '../src/compilation/queue';
 import type { ProjectFile } from '../src/domain/models';
 const tex = (name: string, content = 'hello'): ProjectFile => ({
   id: name,
@@ -66,15 +65,5 @@ describe('Compilation snapshots', () => {
       content: 'AQID',
       binary: true,
     });
-  });
-  it('encrypts snapshots and binds ciphertext to its project', () => {
-    const snapshot = makeSnapshot(
-      [tex('main.tex', 'private document')],
-      settings,
-    );
-    const encrypted = encode(snapshot, 'project-a');
-    expect(encrypted).not.toContain('private document');
-    expect(decode(encrypted, 'project-a')).toEqual(snapshot);
-    expect(() => decode(encrypted, 'project-b')).toThrow();
   });
 });

@@ -111,6 +111,15 @@ export const env = {
   languageToolUrl:
     process.env.LANGUAGETOOL_URL || 'http://localhost:8010/v2/check',
   languageToolApiKey: process.env.LANGUAGETOOL_API_KEY || '',
+  compilationServiceUrl:
+    process.env.COMPILATION_SERVICE_URL || 'http://localhost:3200',
+  compilationProjectsApiToken:
+    process.env.COMPILATION_PROJECTS_API_TOKEN ||
+    'frelated-dev-projects-api-token-change-me',
+  compilationServiceTimeoutMs: Math.max(
+    1000,
+    Number(process.env.COMPILATION_SERVICE_TIMEOUT_MS) || 30000,
+  ),
   proofreadingDefaultLanguage:
     process.env.PROOFREADING_DEFAULT_LANGUAGE || 'fr',
   prismaSchemaPath:
