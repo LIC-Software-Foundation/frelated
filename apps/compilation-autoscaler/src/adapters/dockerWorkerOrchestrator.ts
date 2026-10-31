@@ -73,6 +73,8 @@ export interface DockerWorkerOrchestratorConfig {
   /** Docker network to attach new workers to (must match docker-compose.yml). */
   network: string;
   redisUrl: string;
+  compilationServiceUrl: string;
+  compilationServiceToken: string;
   authSecret: string;
   dataEncryptionKey: string;
   compilationTimeoutMs: number;
@@ -192,6 +194,8 @@ export class DockerWorkerOrchestrator implements WorkerOrchestrator {
       Image: this.config.image,
       Env: [
         `REDIS_URL=${this.config.redisUrl}`,
+        `COMPILATION_SERVICE_URL=${this.config.compilationServiceUrl}`,
+        `COMPILATION_WORKER_TOKEN=${this.config.compilationServiceToken}`,
         `AUTH_SECRET=${this.config.authSecret}`,
         `DATA_ENCRYPTION_KEY=${this.config.dataEncryptionKey}`,
         `COMPILATION_TIMEOUT_MS=${this.config.compilationTimeoutMs}`,
@@ -208,10 +212,12 @@ export class DockerWorkerOrchestrator implements WorkerOrchestrator {
         SecurityOpt: ['no-new-privileges:true'],
         CapDrop: ['ALL'],
         CapAdd: ['SETUID', 'SETGID', 'CHOWN', 'DAC_OVERRIDE'],
-        Memory: 768 * 1024 * 1024,
-        NanoCpus: 1_000_000_000,
-        PidsLimit: 128,
-        Tmpfs: { '/tmp': 'size=384m,mode=1777' },
+        Memory: this.config.workerMemoryBytes,
+        NanoCpus: this.config.workerNanoCpus,
+        PidsLimit: this.config.workerPidsLimit,
+        Tmpfs: {
+          '/tmp': `size=${this.config.workerTmpfsSizeMb}m,mode=1777`,
+        },
       },
     });
     await container.start();

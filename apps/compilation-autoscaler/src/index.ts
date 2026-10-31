@@ -1,6 +1,6 @@
 import { env } from './config/env.js';
 import { createLogger } from './logging/logger.js';
-import { BullMqQueueDepthProvider } from './adapters/bullMqQueueDepthProvider.js';
+import { HttpQueueDepthProvider } from './adapters/httpQueueDepthProvider.js';
 import { HostSystemResourceMonitor } from './adapters/hostSystemResourceMonitor.js';
 import { DockerWorkerOrchestrator } from './adapters/dockerWorkerOrchestrator.js';
 import { AutoscalerService } from './services/autoscalerService.js';
@@ -22,10 +22,10 @@ const policyConfig: ScalingPolicyConfig = {
   busyWorkerCpuLoadThreshold: env.busyWorkerCpuLoadThreshold,
 };
 
-const queueDepthProvider = new BullMqQueueDepthProvider(
-  env.redisUrl,
-  env.compilationQueueName,
-  env.heavyJobPayloadThresholdBytes,
+const queueDepthProvider = new HttpQueueDepthProvider(
+  env.compilationServiceUrl,
+  env.compilationAutoscalerToken,
+  env.compilationServiceTimeoutMs,
   logger,
 );
 const systemResourceMonitor = new HostSystemResourceMonitor(logger);
@@ -35,9 +35,15 @@ const workerOrchestrator = new DockerWorkerOrchestrator(
     image: env.compilationWorkerImage,
     network: env.dockerNetwork,
     redisUrl: env.workerRedisUrl,
+    compilationServiceUrl: env.workerCompilationServiceUrl,
+    compilationServiceToken: env.workerCompilationServiceToken,
     authSecret: env.workerAuthSecret,
     dataEncryptionKey: env.workerDataEncryptionKey,
     compilationTimeoutMs: env.workerCompilationTimeoutMs,
+    workerMemoryBytes: env.workerMemoryBytes,
+    workerNanoCpus: env.workerNanoCpus,
+    workerPidsLimit: env.workerPidsLimit,
+    workerTmpfsSizeMb: env.workerTmpfsSizeMb,
     gracefulStopTimeoutSeconds: env.workerGracefulStopTimeoutSeconds,
   },
   logger,

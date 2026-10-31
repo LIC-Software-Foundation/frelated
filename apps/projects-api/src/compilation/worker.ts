@@ -1,65 +1,104 @@
-import { Worker } from 'bullmq';
-import { Redis } from 'ioredis';
+import { Worker, type Job } from 'bullmq';
 import { compileSnapshot } from './compiler';
-import { decode, encode, key, queueName, redisUrl } from './queue';
-import type { Snapshot } from './model';
+import type { CompilationResult, Snapshot } from './model';
+import { decryptString } from '../services/dataProtection';
 
-const redis = new Redis(redisUrl, { maxRetriesPerRequest: null });
-redis.on('error', (error) => console.error('[worker redis]', error.message));
-const worker = new Worker(
+const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
+const queueName = process.env.COMPILATION_QUEUE_NAME || 'frelated-latex';
+const serviceUrl =
+  process.env.COMPILATION_SERVICE_URL || 'http://localhost:3200';
+const workerToken =
+  process.env.COMPILATION_WORKER_TOKEN || 'frelated-dev-worker-token-change-me';
+
+interface JobData {
+  projectId: string;
+  hash: string;
+  snapshot: string;
+}
+
+const decodeSnapshot = (value: string, projectId: string): Snapshot =>
+  JSON.parse(
+    decryptString(JSON.parse(value), 'compilation', projectId),
+  ) as Snapshot;
+
+async function serviceRequest(
+  path: string,
+  init: RequestInit = {},
+  acceptedStatuses: number[] = [],
+) {
+  const response = await fetch(`${serviceUrl}${path}`, {
+    ...init,
+    headers: {
+      authorization: `Bearer ${workerToken}`,
+      ...(init.body ? { 'content-type': 'application/json' } : {}),
+      ...init.headers,
+    },
+  });
+  if (!response.ok && !acceptedStatuses.includes(response.status)) {
+    throw new Error(`Compilation queue service returned ${response.status}.`);
+  }
+  return response;
+}
+
+async function isCurrent(job: Job<JobData>): Promise<boolean> {
+  const response = await serviceRequest(
+    `/internal/jobs/${encodeURIComponent(job.id!)}/current?projectId=${encodeURIComponent(job.data.projectId)}`,
+  );
+  return ((await response.json()) as { current: boolean }).current;
+}
+
+async function report(
+  job: Job<JobData>,
+  result: CompilationResult,
+  output: { pdf?: string; synctex?: string } = {},
+) {
+  await serviceRequest(
+    `/internal/jobs/${encodeURIComponent(job.id!)}/result`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        projectId: job.data.projectId,
+        hash: job.data.hash,
+        result,
+        pdf: output.pdf,
+        synctex: output.synctex,
+        snapshot: job.data.snapshot,
+      }),
+    },
+    // A newer revision may supersede this job while TeX is running. The
+    // queue service rejects that stale result without making the job fail.
+    [409],
+  );
+}
+
+const connectionUrl = new URL(redisUrl);
+const worker = new Worker<JobData>(
   queueName,
   async (job) => {
-    const { projectId, hash, snapshot } = job.data as {
-      projectId: string;
-      hash: string;
-      snapshot: string;
-    };
-    const stateKey = key(projectId);
     // Superseded jobs never spend CPU on an obsolete revision.
-    if ((await redis.hget(stateKey, 'jobId')) !== job.id) return;
+    if (!(await isCurrent(job))) return;
     const { result, pdf, synctex } = await compileSnapshot(
-      decode<Snapshot>(snapshot, projectId),
+      decodeSnapshot(job.data.snapshot, job.data.projectId),
     );
-    // Compare-and-set prevents a slower old job from overwriting a newer result.
-    await redis.eval(
-      `
-    if redis.call('HGET', KEYS[1], 'jobId') ~= ARGV[1] then return 0 end
-    redis.call('HSET', KEYS[1], 'status', ARGV[2], 'result', ARGV[3])
-    if ARGV[2] == 'success' and ARGV[4] ~= '' and ARGV[5] ~= '' then
-      redis.call('HSET', KEYS[1], 'pdf', ARGV[4], 'pdfJobId', ARGV[1], 'pdfHash', ARGV[6], 'synctex', ARGV[5], 'synctexJobId', ARGV[1], 'synctexHash', ARGV[6], 'synctexSnapshot', ARGV[7])
-    end
-    redis.call('PUBLISH', 'frelated-compilation-events', ARGV[8])
-    return 1
-  `,
-      1,
-      stateKey,
-      job.id!,
-      result.status,
-      encode(result, projectId),
-      pdf ? encode(pdf, projectId) : '',
-      synctex ? encode(synctex, projectId) : '',
-      hash,
-      snapshot,
-      projectId,
-    );
+    await report(job, result, { pdf, synctex });
   },
   {
     connection: {
-      host: new URL(redisUrl).hostname,
-      port: Number(new URL(redisUrl).port) || 6379,
-      username: new URL(redisUrl).username || undefined,
-      password: new URL(redisUrl).password || undefined,
-      db: Number(new URL(redisUrl).pathname.slice(1)) || 0,
+      host: connectionUrl.hostname,
+      port: Number(connectionUrl.port) || 6379,
+      username: connectionUrl.username || undefined,
+      password: connectionUrl.password || undefined,
+      db: Number(connectionUrl.pathname.slice(1)) || 0,
       ...(redisUrl.startsWith('rediss:') ? { tls: {} } : {}),
     },
     concurrency: 1,
   },
 );
+
 worker.on('error', (error) => console.error('[worker]', error.message));
 worker.on('failed', (job, error) => {
   if (!job) return;
-  const projectId = job.data.projectId as string;
-  const result = {
+  const result: CompilationResult = {
     status: 'error',
     logs: [
       {
@@ -70,20 +109,15 @@ worker.on('failed', (job, error) => {
     compiledAt: new Date().toISOString(),
     durationMs: 0,
   };
-  void redis
-    .eval(
-      `if redis.call('HGET', KEYS[1], 'jobId') == ARGV[1] then redis.call('HSET', KEYS[1], 'status', 'error', 'result', ARGV[2]); redis.call('PUBLISH', 'frelated-compilation-events', ARGV[3]); end`,
-      1,
-      key(projectId),
-      job.id!,
-      encode(result, projectId),
-      projectId,
-    )
-    .catch(console.error);
+  void report(job, result).catch((reportError) =>
+    console.error('[worker report failed]', reportError),
+  );
   console.error('[worker failed]', error.message);
 });
-for (const signal of ['SIGTERM', 'SIGINT'])
+
+for (const signal of ['SIGTERM', 'SIGINT']) {
   process.on(signal, () => {
-    void worker.close().then(() => redis.quit());
+    void worker.close();
   });
+}
 console.log('LaTeX worker ready (pdfLaTeX, XeLaTeX, LuaLaTeX, BibTeX/Biber).');

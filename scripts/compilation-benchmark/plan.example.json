@@ -1,0 +1,8 @@
+[
+  { "name": "warmup", "durationSeconds": 15, "burst": 1, "warmup": true },
+  { "name": "baseline", "durationSeconds": 30, "ratePerSecond": 0.1 },
+  { "name": "ramp", "durationSeconds": 45, "ratePerSecond": 0.25 },
+  { "name": "burst", "durationSeconds": 30, "burst": 12 },
+  { "name": "sustained", "durationSeconds": 60, "ratePerSecond": 0.5 },
+  { "name": "decrease", "durationSeconds": 30, "ratePerSecond": 0.1 }
+]

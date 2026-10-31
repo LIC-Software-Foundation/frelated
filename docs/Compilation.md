@@ -12,9 +12,9 @@
 
 ## Services et données
 
-L'API crée un instantané des sources sauvegardées du projet après acquittement des sauvegardes REST. Elle soumet un job BullMQ à Redis et répond immédiatement avec HTTP 202 et un identifiant. Un worker séparé exécute latexmk dans un répertoire temporaire, avec pdfLaTeX, XeLaTeX ou LuaLaTeX. Latexmk lance les passes nécessaires, BibTeX ou Biber selon le document.
+`projects-api` crée un instantané des sources sauvegardées après acquittement des sauvegardes REST, puis l'envoie par HTTP au service isolé `compilation-queue-service`. Ce service est le seul propriétaire de la file BullMQ, de l'état de compilation, des paramètres, des logs et des artefacts. Il répond immédiatement à l'API avec HTTP 202 et un identifiant. Un worker séparé réserve le job dans BullMQ et exécute latexmk dans un répertoire temporaire, avec pdfLaTeX, XeLaTeX ou LuaLaTeX.
 
-Les workers publient les résultats dans Redis ; chaque instance de l'API relaie les changements aux navigateurs par WebSocket. Le navigateur s'authentifie dans le premier message (le token n'est pas placé dans l'URL). Une vérification périodique rétablit l'état après une notification manquée et revalide l'accès.
+Les workers renvoient leurs résultats au service de file par une API interne protégée. `projects-api` interroge ce service et relaie les changements aux navigateurs par WebSocket. Le navigateur s'authentifie dans le premier message (le token n'est pas placé dans l'URL). Cette vérification périodique revalide aussi l'accès au projet.
 
 Les instantanés, logs, paramètres et PDF sont chiffrés avec `DATA_ENCRYPTION_KEY`, selon le mécanisme AES-GCM existant. Redis doit rester privé et utilise un volume persistant avec AOF. Le dernier PDF et les paramètres sont conservés par projet (cache de 30 jours après soumission) et retirés lors de sa suppression ; les jobs terminés sont purgés selon leur durée de rétention. Les résultats PDF ne constituent pas une sauvegarde des sources, qui restent dans MongoDB.
 
@@ -26,7 +26,7 @@ Une empreinte porte sur les sources et paramètres. Une révision croissante et 
 bash run-docker.sh up
 ```
 
-Cela ajoute `redis` et `compilation-worker` aux services existants. Prévoir plusieurs Go disponibles pour la première construction de TeX Live et les couches de build.
+Cela ajoute `redis`, `compilation-queue-service`, `compilation-worker` et `compilation-autoscaler` aux services existants. Prévoir plusieurs Go disponibles pour la première construction de TeX Live et les couches de build.
 
 Pour augmenter le nombre de workers sur la même machine :
 
@@ -45,8 +45,10 @@ bash run-docker.sh logs redis
 
 ## Configuration
 
-- API et worker : `REDIS_URL` (en Compose : `redis://redis:6379`).
-- API et worker : mêmes `AUTH_SECRET` et `DATA_ENCRYPTION_KEY`.
+- Service de file et worker : `REDIS_URL` (en Compose : `redis://redis:6379`). `projects-api` et l'autoscaler ne se connectent pas à Redis.
+- API, worker et autoscaler : `COMPILATION_SERVICE_URL` vers le service de file.
+- Identités internes distinctes : `COMPILATION_PROJECTS_API_TOKEN`, `COMPILATION_WORKER_TOKEN` et `COMPILATION_AUTOSCALER_TOKEN`.
+- Service de file et worker : même `DATA_ENCRYPTION_KEY`.
 - API : `COLLAB_SERVER_URL` pointe vers le serveur Yjs.
 - Worker : `COMPILATION_TIMEOUT_MS`, 120000 par défaut.
 - En développement, le proxy Vite `/api` accepte HTTP et WebSocket. Un reverse proxy de production doit aussi transmettre les upgrades WebSocket sur `/projects/:projectId/compilation/events`.
@@ -77,15 +79,12 @@ Prévoir plusieurs gigaoctets disponibles pour télécharger, extraire et constr
 pnpm --filter @frelated/projects-api exec vitest run tests/compilation.test.ts
 ```
 
-Les tests d'intégration nécessitent l'image du worker et Redis. La base Redis 15 doit être réservée aux tests pour éviter que les workers de l’application consomment leurs jobs. Ils créent un projet à identifiant unique avec un service de projets de test et vérifient la vraie file, les moteurs TeX, le PDF et les notifications :
+Les tests d'intégration complets nécessitent Redis, le service de file et l'image worker. La suite unitaire de chaque service se lance séparément :
 
 ```bash
-docker run --rm --network frelated-network \
-  -e REDIS_URL=redis://redis:6379/15 -e COMPILATION_INTEGRATION=1 \
-  -v "$PWD:/workspace" -w /workspace/apps/projects-api \
-  frelated-compilation-worker \
-  ./node_modules/.bin/vitest run tests/compilation.integration.test.ts \
-  --pool=forks --poolOptions.forks.singleFork
+pnpm --filter @frelated/compilation-queue-service test
+pnpm --filter @frelated/projects-api test
+pnpm --filter @frelated/compilation-autoscaler test
 ```
 
 ## Mode de développement économe en reconstructions

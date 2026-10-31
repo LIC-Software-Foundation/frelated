@@ -1,23 +1,14 @@
-import { randomUUID } from 'node:crypto';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { WebSocket } from 'ws';
-import type { Redis } from 'ioredis';
 import { z } from 'zod';
 import { projectsService } from '../services/projects.service';
 import type { AuthPrincipal } from '../domain/models';
 import { resolveTokenPrincipal } from '../services/principals';
-import {
-  createCompilationQueue,
-  decode,
-  encode,
-  key,
-  readSettings,
-} from '../compilation/queue';
+import { compilationQueueClient } from '../compilation/client';
 import {
   fingerprint,
   makeSnapshot,
   settingsSchema,
-  type CompilationResult,
 } from '../compilation/model';
 import {
   inverseSearch,
@@ -26,59 +17,11 @@ import {
 } from '../compilation/synctex';
 
 export default async function compilationRoutes(server: FastifyInstance) {
-  let resources: ReturnType<typeof createCompilationQueue> | undefined;
-  let subscriber: Redis | undefined;
   const clients = new Map<
     WebSocket,
-    { projectId: string; token: string; busy: boolean }
+    { projectId: string; token: string; busy: boolean; lastPayload?: string }
   >();
-  const get = () => {
-    if (!resources) {
-      resources = createCompilationQueue();
-      const sub = resources.connection.duplicate();
-      subscriber = sub;
-      sub.on('error', (error) => server.log.error(error));
-      void sub
-        .subscribe('frelated-compilation-events')
-        .catch((error) => server.log.error(error));
-      sub.on('message', (_channel, projectId) => {
-        for (const [socket, client] of clients)
-          if (client.projectId === projectId) void sendState(socket);
-      });
-    }
-    return resources;
-  };
-  const state = async (projectId: string) => {
-    const fields = [
-      'result',
-      'status',
-      'jobId',
-      'revision',
-      'pdfJobId',
-      'synctexJobId',
-      'hash',
-      'pdfHash',
-    ];
-    const values = await get().connection.hmget(key(projectId), ...fields);
-    const data = Object.fromEntries(
-      fields.map((field, index) => [field, values[index]]),
-    );
-    const result = data.result
-      ? decode<CompilationResult>(data.result, projectId)
-      : { logs: [] };
-    return {
-      ...result,
-      status: data.status || 'idle',
-      jobId: data.jobId ?? undefined,
-      revision: Number(data.revision || 0),
-      pdfJobId: data.pdfJobId ?? undefined,
-      synctexJobId: data.synctexJobId ?? undefined,
-      isPdfStale: Boolean(
-        data.pdfHash && data.hash && data.pdfHash !== data.hash,
-      ),
-      settings: await readSettings(get().connection, projectId),
-    };
-  };
+  const state = (projectId: string) => compilationQueueClient.state(projectId);
   const authorize = async (
     token: string,
     projectId: string,
@@ -94,26 +37,30 @@ export default async function compilationRoutes(server: FastifyInstance) {
     client.busy = true;
     try {
       await authorize(client.token, client.projectId);
-      socket.send(JSON.stringify(await state(client.projectId)));
+      const payload = JSON.stringify(await state(client.projectId));
+      if (payload !== client.lastPayload) {
+        client.lastPayload = payload;
+        socket.send(payload);
+      }
     } catch {
       socket.close(1008, 'Accès indisponible');
     } finally {
       client.busy = false;
     }
   };
-  // Poll is a recovery path for missed Pub/Sub events and permission revocations.
+  const notifyProject = (projectId: string) => {
+    for (const [socket, client] of clients)
+      if (client.projectId === projectId) void sendState(socket);
+  };
+  // The public WebSocket remains in projects-api. Polling the internal HTTP
+  // API avoids giving this service any direct Redis/PubSub dependency.
   const heartbeat = setInterval(() => {
     for (const socket of clients.keys()) void sendState(socket);
-  }, 10000);
+  }, 2000);
   heartbeat.unref();
   server.addHook('onClose', async () => {
     clearInterval(heartbeat);
-    subscriber?.disconnect();
     for (const socket of clients.keys()) socket.close();
-    if (resources) {
-      await resources.queue.close();
-      resources.connection.disconnect();
-    }
   });
   server.get<{ Params: { projectId: string } }>(
     '/:projectId/compilation/events',
@@ -158,9 +105,12 @@ export default async function compilationRoutes(server: FastifyInstance) {
       return reply
         .code(400)
         .send({ message: 'Paramètres de compilation invalides.' });
+    if ('statusCode' in error && error.statusCode === 409)
+      return reply.code(409).send({ message: error.message });
     server.log.error(error);
     return reply.code(503).send({
-      message: 'Compilation indisponible. Vérifiez Redis et le worker LaTeX.',
+      message:
+        'Compilation indisponible. Vérifiez le service de file et le worker LaTeX.',
     });
   });
   server.get<{ Params: { projectId: string } }>(
@@ -189,14 +139,12 @@ export default async function compilationRoutes(server: FastifyInstance) {
       } catch (error) {
         return reply.code(400).send({ message: (error as Error).message });
       }
-      const redis = get().connection;
-      await redis.hset(
-        key(project.id),
-        'settings',
-        encode(settings, project.id),
+      const nextState = await compilationQueueClient.settings(
+        project.id,
+        settings,
       );
-      await redis.publish('frelated-compilation-events', project.id);
-      return state(project.id);
+      notifyProject(project.id);
+      return nextState;
     },
   );
   server.post<{ Params: { projectId: string } }>(
@@ -212,94 +160,24 @@ export default async function compilationRoutes(server: FastifyInstance) {
       const { onlyIfChanged } = z
         .object({ onlyIfChanged: z.boolean().default(false) })
         .parse(request.body ?? {});
-      const { connection: redis, queue } = get();
-      const lock = randomUUID();
-      if (!(await redis.set(`${key(projectId)}:lock`, lock, 'PX', 15000, 'NX')))
-        return reply.code(409).send({
-          message: 'Une demande de compilation est déjà en cours. Réessayez.',
-        });
+      // Compile only persisted project sources, never transient editor state.
+      let snapshot;
       try {
-        // Ctrl+S/Compiler await REST persistence first. Compile those acknowledged
-        // sources, never an uninitialized or reconnecting transient Yjs room.
-        let snapshot;
-        try {
-          snapshot = makeSnapshot(
-            project.files,
-            await readSettings(redis, projectId),
-          );
-        } catch (error) {
-          return reply.code(400).send({ message: (error as Error).message });
-        }
-        const hash = fingerprint(snapshot);
-        const previousFields = ['status', 'hash', 'pdfHash'];
-        const previousValues = await redis.hmget(
-          key(projectId),
-          ...previousFields,
+        snapshot = makeSnapshot(
+          project.files,
+          (await compilationQueueClient.state(projectId)).settings,
         );
-        const previous = Object.fromEntries(
-          previousFields.map((field, index) => [field, previousValues[index]]),
-        );
-        if (
-          (previous.status === 'compiling' && previous.hash === hash) ||
-          (onlyIfChanged &&
-            previous.pdfHash === hash &&
-            previous.status === 'success')
-        )
-          return state(projectId);
-        const jobId = randomUUID();
-        const revision = await redis.incr(`${key(projectId)}:sequence`);
-        await redis.hset(
-          key(projectId),
-          'jobId',
-          jobId,
-          'hash',
-          hash,
-          'status',
-          'compiling',
-          'revision',
-          revision,
-        );
-        // A new job owns a fresh log stream. Never expose the previous result
-        // while this compilation is queued or running.
-        await redis.hdel(key(projectId), 'result');
-        try {
-          await queue.add(
-            'compile',
-            { projectId, hash, snapshot: encode(snapshot, projectId) },
-            { jobId },
-          );
-        } catch (error) {
-          await redis.hset(
-            key(projectId),
-            'status',
-            'error',
-            'result',
-            encode(
-              {
-                logs: [
-                  {
-                    level: 'error',
-                    message: 'La mise en file a échoué. Réessayez.',
-                  },
-                ],
-              },
-              projectId,
-            ),
-          );
-          await redis.publish('frelated-compilation-events', projectId);
-          throw error;
-        }
-        await redis.expire(key(projectId), 30 * 86400);
-        await redis.publish('frelated-compilation-events', projectId);
-        return reply.code(202).send(await state(projectId));
-      } finally {
-        await redis.eval(
-          "if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end",
-          1,
-          `${key(projectId)}:lock`,
-          lock,
-        );
+      } catch (error) {
+        return reply.code(400).send({ message: (error as Error).message });
       }
+      const submitted = await compilationQueueClient.submit({
+        projectId,
+        hash: fingerprint(snapshot),
+        snapshot,
+        onlyIfChanged,
+      });
+      notifyProject(projectId);
+      return reply.code(submitted.accepted ? 202 : 200).send(submitted.state);
     },
   );
   server.get<{ Params: { projectId: string } }>(
@@ -311,54 +189,28 @@ export default async function compilationRoutes(server: FastifyInstance) {
         request.currentPrincipal!,
         projectId,
       );
-      const pdf = await get().connection.hget(key(projectId), 'pdf');
-      if (!pdf)
-        return reply.code(404).send({ message: 'Aucun PDF disponible.' });
-      reply
-        .header('Cache-Control', 'private, no-store')
-        .header('Content-Disposition', 'inline; filename="document.pdf"');
-      return reply
-        .type('application/pdf')
-        .send(Buffer.from(decode<string>(pdf, projectId), 'base64'));
+      try {
+        const pdf = await compilationQueueClient.pdf(projectId);
+        reply
+          .header('Cache-Control', 'private, no-store')
+          .header('Content-Disposition', 'inline; filename="document.pdf"');
+        return reply.type('application/pdf').send(pdf);
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          'statusCode' in error &&
+          error.statusCode === 404
+        )
+          return reply.code(404).send({ message: 'Aucun PDF disponible.' });
+        throw error;
+      }
     },
   );
 
   const readSyncArtifact = async (
     projectId: string,
   ): Promise<SyncArtifact | null> => {
-    const fields = [
-      'pdf',
-      'pdfJobId',
-      'pdfHash',
-      'synctex',
-      'synctexJobId',
-      'synctexHash',
-      'synctexSnapshot',
-      'hash',
-    ];
-    const values = await get().connection.hmget(key(projectId), ...fields);
-    const data = Object.fromEntries(
-      fields.map((field, index) => [field, values[index]]),
-    );
-    if (
-      !data.pdf ||
-      !data.synctex ||
-      !data.synctexSnapshot ||
-      !data.synctexHash ||
-      !data.pdfJobId ||
-      data.pdfJobId !== data.synctexJobId ||
-      data.pdfHash !== data.synctexHash
-    ) {
-      return null;
-    }
-    return {
-      jobId: data.pdfJobId,
-      pdf: decode<string>(data.pdf, projectId),
-      synctex: decode<string>(data.synctex, projectId),
-      snapshot: decode(data.synctexSnapshot, projectId),
-      hash: data.synctexHash,
-      stale: Boolean(data.hash && data.pdfHash !== data.hash),
-    };
+    return compilationQueueClient.syncArtifact(projectId);
   };
 
   const sendSyncError = (reply: FastifyReply, error: unknown) => {

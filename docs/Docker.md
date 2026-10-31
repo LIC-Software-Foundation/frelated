@@ -2,7 +2,8 @@
 
 ## Services
 
-- `redis` : file BullMQ, paramètres et derniers résultats chiffrés
+- `redis` : stockage privé BullMQ et état chiffré, accessible au service de file et aux workers
+- `compilation-queue-service` : propriétaire de la file, de l'état, des artefacts et de l'API de métriques (port `3200`)
 - `compilation-worker` : latexmk, pdfLaTeX, XeLaTeX, LuaLaTeX et BibTeX/Biber
 - `compilation-autoscaler` : ajuste le nombre de workers selon la charge, via le socket Docker (voir [Autoscaling](Autoscaling.md))
 - `languagetool` : correcteur linguistique local
@@ -51,6 +52,7 @@ Par defaut, les ports publies ont ete decales pour eviter les conflits locaux:
 - Éditeur : `http://localhost:5173`
 - Monitoring : `http://localhost:5174`
 - API : `http://localhost:3000`
+- Service interne de file : `http://localhost:3200/health`
 - Swagger : `http://localhost:3000/docs`
 - Collaboration : `ws://localhost:8080`
 - MailHog : `http://localhost:8025`

@@ -152,22 +152,25 @@ export function useProjects(user: EditorIdentity, ownerEmail?: string) {
     async (
       id: string,
       files: ProjectFile[],
+      options: { optimistic?: boolean } = {},
     ): Promise<ProjectWithFiles | undefined> => {
       const optimisticUpdatedAt = new Date().toISOString();
 
-      setProjects((current) =>
-        sortProjectsByActivity(
-          current.map((project) =>
-            project.id === id
-              ? {
-                  ...project,
-                  files,
-                  updatedAt: optimisticUpdatedAt,
-                }
-              : project,
+      if (options.optimistic !== false) {
+        setProjects((current) =>
+          sortProjectsByActivity(
+            current.map((project) =>
+              project.id === id
+                ? {
+                    ...project,
+                    files,
+                    updatedAt: optimisticUpdatedAt,
+                  }
+                : project,
+            ),
           ),
-        ),
-      );
+        );
+      }
 
       const updatedProject = await appServices.projects.replaceProjectFiles(
         scopedOwnerEmail,

@@ -19,6 +19,7 @@ export default defineConfig({
       'tests/pdf-sync*.test.ts',
       'tests/guest-access*.test.tsx',
       'tests/toast*.test.tsx',
+      'tests/folder-import*.test.tsx',
     ],
     pool: 'forks',
     poolOptions: { forks: { singleFork: true } },

@@ -90,19 +90,41 @@ importers:
 
   apps/compilation-autoscaler:
     dependencies:
-      bullmq:
-        specifier: 5.81.5
-        version: 5.81.5
       dockerode:
         specifier: ^5.0.1
         version: 5.0.1
-      ioredis:
-        specifier: 5.11.1
-        version: 5.11.1
     devDependencies:
       '@types/dockerode':
         specifier: ^4.0.1
         version: 4.0.1
+      '@types/node':
+        specifier: ^24.5.2
+        version: 24.5.2
+      tsx:
+        specifier: ^4.0.0
+        version: 4.20.5
+      typescript:
+        specifier: ^5.4.0
+        version: 5.9.2
+      vitest:
+        specifier: ^1.5.0
+        version: 1.6.1(@types/node@24.5.2)(jsdom@26.1.0)(lightningcss@1.30.1)
+
+  apps/compilation-queue-service:
+    dependencies:
+      bullmq:
+        specifier: 5.81.5
+        version: 5.81.5
+      fastify:
+        specifier: ^5.0.0
+        version: 5.6.0
+      ioredis:
+        specifier: 5.11.1
+        version: 5.11.1
+      zod:
+        specifier: 3.25.76
+        version: 3.25.76
+    devDependencies:
       '@types/node':
         specifier: ^24.5.2
         version: 24.5.2
@@ -4611,11 +4633,6 @@ packages:
     engines: {node: '>=10'}
     hasBin: true
 
-  semver@7.7.2:
-    resolution: {integrity: sha512-RF0Fw+rO5AMf9MAyaRXI4AV0Ulj5lMHqVxxdSgiVbixSCXoEmmX/jk0CuJw4+3SqroYO9VoUh+HcuJivvtJemA==}
-    engines: {node: '>=10'}
-    hasBin: true
-
   semver@7.8.5:
     resolution: {integrity: sha512-Y7/KDsb8LjooZpwaqGyulO6DQlksgCncchHGk+sZIY4SBvUocMBEFH5Ur1fI4dV+Jvl0w6cjvucaIi40puRioA==}
     engines: {node: '>=10'}
@@ -6235,7 +6252,7 @@ snapshots:
       '@napi-rs/canvas-win32-x64-msvc': 0.1.100
     optional: true
 
-  '@nestjs/axios@4.0.1(@nestjs/common@11.1.6(reflect-metadata@0.2.2)(rxjs@7.8.2))(axios@1.12.2)(rxjs@7.8.2)':
+  '@nestjs/axios@4.0.1(@nestjs/common@11.1.6(reflect-metadata@0.1.14)(rxjs@7.8.2))(axios@1.12.2)(rxjs@7.8.2)':
     dependencies:
       '@nestjs/common': 11.1.6(reflect-metadata@0.2.2)(rxjs@7.8.2)
       axios: 1.12.2
@@ -6253,7 +6270,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@nestjs/core@11.1.6(@nestjs/common@11.1.6(reflect-metadata@0.2.2)(rxjs@7.8.2))(reflect-metadata@0.2.2)(rxjs@7.8.2)':
+  '@nestjs/core@11.1.6(@nestjs/common@11.1.6(reflect-metadata@0.1.14)(rxjs@7.8.2))(reflect-metadata@0.2.2)(rxjs@7.8.2)':
     dependencies:
       '@nestjs/common': 11.1.6(reflect-metadata@0.2.2)(rxjs@7.8.2)
       '@nuxt/opencollective': 0.4.1
@@ -6291,9 +6308,9 @@ snapshots:
 
   '@openapitools/openapi-generator-cli@2.23.4(@types/node@24.5.2)':
     dependencies:
-      '@nestjs/axios': 4.0.1(@nestjs/common@11.1.6(reflect-metadata@0.2.2)(rxjs@7.8.2))(axios@1.12.2)(rxjs@7.8.2)
+      '@nestjs/axios': 4.0.1(@nestjs/common@11.1.6(reflect-metadata@0.1.14)(rxjs@7.8.2))(axios@1.12.2)(rxjs@7.8.2)
       '@nestjs/common': 11.1.6(reflect-metadata@0.2.2)(rxjs@7.8.2)
-      '@nestjs/core': 11.1.6(@nestjs/common@11.1.6(reflect-metadata@0.2.2)(rxjs@7.8.2))(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@nestjs/core': 11.1.6(@nestjs/common@11.1.6(reflect-metadata@0.1.14)(rxjs@7.8.2))(reflect-metadata@0.2.2)(rxjs@7.8.2)
       '@nuxtjs/opencollective': 0.3.2
       axios: 1.12.2
       chalk: 4.1.2
@@ -8161,7 +8178,7 @@ snapshots:
       process-warning: 5.0.0
       rfdc: 1.4.1
       secure-json-parse: 4.0.0
-      semver: 7.7.2
+      semver: 7.8.5
       toad-cache: 3.7.0
 
   fastq@1.19.1:
@@ -9861,8 +9878,6 @@ snapshots:
   semver@7.5.4:
     dependencies:
       lru-cache: 6.0.0
-
-  semver@7.7.2: {}
 
   semver@7.8.5: {}
 

@@ -26,7 +26,7 @@ export default [
     // Standalone Node scripts (not React source, not run through the
     // Playwright test runner's TS transform) — need Node globals like
     // `process`, unlike the rest of this app which is browser-only.
-    files: ['apps/web-editor-ui/e2e/**/*.mjs'],
+    files: ['apps/web-editor-ui/e2e/**/*.mjs', 'scripts/**/*.mjs'],
     languageOptions: { globals: globals.node },
   },
   {
