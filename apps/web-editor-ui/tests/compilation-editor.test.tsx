@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   compile: vi.fn(),
   reportError: vi.fn(),
   open: vi.fn(),
+  updateFiles: vi.fn(),
   state: {
     status: 'success',
     logs: [],
@@ -70,6 +71,7 @@ vi.mock('../src/hooks/useProjects', () => {
       isLoading: false,
       openProject: mocks.open,
       saveFileContent: mocks.save,
+      updateProjectFiles: mocks.updateFiles,
     }),
   };
 });
@@ -93,10 +95,80 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.save.mockResolvedValue(undefined);
   mocks.compile.mockResolvedValue(undefined);
+  mocks.updateFiles.mockResolvedValue(undefined);
   mocks.state.status = 'success';
 });
 afterEach(cleanup);
 describe('Editor compilation commands', () => {
+  it('imports multiple folders together and preserves existing project sources', async () => {
+    show();
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Actions pour la racine du projet',
+      }),
+    );
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Importer des dossiers' }),
+    );
+    const text = new File(['chapter source'], 'chapter.tex', {
+      type: 'text/plain',
+    });
+    const image = new File(['image data'], 'plot.png', { type: 'image/png' });
+    Object.defineProperty(text, 'webkitRelativePath', {
+      value: 'chapitres/chapter.tex',
+    });
+    Object.defineProperty(image, 'webkitRelativePath', {
+      value: 'images/figures/plot.png',
+    });
+    fireEvent.change(screen.getByLabelText('Ajouter des dossiers à importer'), {
+      target: { files: [text, image] },
+    });
+    expect(mocks.updateFiles).not.toHaveBeenCalled();
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Importer 2 dossiers' }),
+    );
+    await waitFor(() => expect(mocks.updateFiles).toHaveBeenCalledTimes(1));
+    expect(mocks.updateFiles).toHaveBeenCalledWith(
+      'project',
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'main',
+          name: 'main.tex',
+          content: 'hello',
+        }),
+        expect.objectContaining({
+          name: 'chapitres',
+          children: [
+            expect.objectContaining({
+              name: 'chapter.tex',
+              content: 'chapter source',
+            }),
+          ],
+        }),
+        expect.objectContaining({
+          name: 'images',
+          children: [
+            expect.objectContaining({
+              name: 'figures',
+              children: [
+                expect.objectContaining({
+                  name: 'plot.png',
+                  type: 'image',
+                  content: expect.stringContaining('data:image/png;base64,'),
+                }),
+              ],
+            }),
+          ],
+        }),
+      ]),
+      { optimistic: false },
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('button', { name: 'Importer 2 dossiers' }),
+      ).toBeNull(),
+    );
+  });
   it('shows Split without compiling and PDF checks freshness', async () => {
     show();
     fireEvent.click(screen.getByRole('button', { name: 'Split', exact: true }));

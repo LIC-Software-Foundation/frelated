@@ -119,3 +119,4 @@ Temporary Items
 playwright-report/
 test-results/
 apps/web-editor-ui/e2e/autoscaler-demo-output/
+artifacts/compilation-benchmark/

@@ -12,8 +12,6 @@
     "test:e2e": "vitest run tests/autoscaler.e2e.test.ts"
   },
   "dependencies": {
-    "bullmq": "5.81.5",
-    "ioredis": "5.11.1",
     "dockerode": "^5.0.1"
   },
   "devDependencies": {

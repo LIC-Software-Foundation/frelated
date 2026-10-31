@@ -35,6 +35,9 @@ import Modal from './Modal';
 import PdfViewer from './PdfViewer';
 import CompilationLogs from './CompilationLogs';
 import FileTreeActionsMenu from './FileTreeActionsMenu';
+import FolderImportModal, {
+  type ImportedFolderFile,
+} from './FolderImportModal';
 import ProjectActionsMenu from './projects/ProjectActionsMenu';
 import ProjectShareModal from './projects/ProjectShareModal';
 import { useToast } from './ui/ToastContext';
@@ -234,24 +237,6 @@ interface TreeImportState {
   parentLabel: string;
 }
 
-interface DirectoryFileHandle {
-  kind: 'file';
-  name: string;
-  getFile: () => Promise<File>;
-}
-
-interface DirectoryFolderHandle {
-  kind: 'directory';
-  name: string;
-  values: () => AsyncIterableIterator<
-    DirectoryFileHandle | DirectoryFolderHandle
-  >;
-}
-
-interface DirectoryPickerWindow extends Window {
-  showDirectoryPicker?: () => Promise<DirectoryFolderHandle>;
-}
-
 // ─── Reusable sub-components ──────────────────────────────────────────────────
 
 const FileIcon: React.FC<{ type: ProjectFile['type'] }> = ({ type }) => {
@@ -361,7 +346,6 @@ const Dashboard: React.FC<DashboardProps> = ({
   );
   const texImportInputRef = useRef<HTMLInputElement | null>(null);
   const imageImportInputRef = useRef<HTMLInputElement | null>(null);
-  const folderImportInputRef = useRef<HTMLInputElement | null>(null);
   const pendingContentSaveRef = useRef<number | null>(null);
   const pendingContentDraftsRef = useRef(
     new Map<string, { projectId: string; fileId: string; content: string }>(),
@@ -754,10 +738,15 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   const updateSelectedProjectFiles = async (
     nextFiles: ProjectFile[],
+    options?: { optimistic?: boolean },
   ): Promise<void> => {
     if (!selectedProject) return;
 
-    await updateProjectFiles(selectedProject.id, sortProjectFiles(nextFiles));
+    await updateProjectFiles(
+      selectedProject.id,
+      sortProjectFiles(nextFiles),
+      options,
+    );
   };
 
   const handleOpenCreationModal = (
@@ -919,9 +908,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     }
   };
 
-  const importFolderFiles = async (
-    importedFiles: Array<{ file: File; path: string }>,
-  ) => {
+  const importFolderFiles = async (importedFiles: ImportedFolderFile[]) => {
     if (!selectedProject || !importState || !importedFiles.length) return;
 
     try {
@@ -982,107 +969,25 @@ const Dashboard: React.FC<DashboardProps> = ({
         );
       }
       setFolderImportProgress(85);
-      await updateSelectedProjectFiles(nextFiles);
+      // Keep the original tree until persistence succeeds, so a retry cannot
+      // duplicate roots left behind by an optimistic update that failed.
+      await updateSelectedProjectFiles(nextFiles, { optimistic: false });
       setFolderImportProgress(100);
       toast(
         `${importedFiles.length} fichier(s) importé(s) dans ${importState.parentLabel}.`,
         'success',
       );
-    } catch (error) {
-      console.error(error);
-      toast("Impossible d'importer ce dossier.", 'error');
-    } finally {
       setFolderImportOpen(false);
-      setFolderImportProgress(null);
       setImportState(null);
-    }
-  };
-
-  const handleImportedFolder = async (
-    event: React.ChangeEvent<HTMLInputElement>,
-  ) => {
-    const importedFiles = Array.from(event.target.files ?? []).map((file) => ({
-      file,
-      path: file.webkitRelativePath || file.name,
-    }));
-    event.target.value = '';
-    await importFolderFiles(importedFiles);
-  };
-
-  const collectDirectoryHandle = async (
-    directory: DirectoryFolderHandle,
-    parent: string,
-  ): Promise<Array<{ file: File; path: string }>> => {
-    const files: Array<{ file: File; path: string }> = [];
-    for await (const entry of directory.values()) {
-      const path = `${parent}/${entry.name}`;
-      if (entry.kind === 'file') {
-        files.push({ file: await entry.getFile(), path });
-      } else {
-        files.push(...(await collectDirectoryHandle(entry, path)));
-      }
-    }
-    return files;
-  };
-
-  const handleChooseFolder = async () => {
-    const picker = (window as DirectoryPickerWindow).showDirectoryPicker;
-    if (!picker) {
-      folderImportInputRef.current?.click();
-      return;
-    }
-
-    try {
-      const directory = await picker();
-      setFolderImportProgress(0);
-      const files = await collectDirectoryHandle(directory, directory.name);
-      await importFolderFiles(files);
     } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') return;
       console.error(error);
+      toast(
+        "Impossible d'importer les dossiers. Votre sélection est conservée.",
+        'error',
+      );
+    } finally {
       setFolderImportProgress(null);
-      toast("Impossible d'importer ce dossier.", 'error');
     }
-  };
-
-  const collectDroppedEntry = async (
-    entry: FileSystemEntry,
-    parent = '',
-  ): Promise<Array<{ file: File; path: string }>> => {
-    const path = parent ? `${parent}/${entry.name}` : entry.name;
-    if (entry.isFile) {
-      const file = await new Promise<File>((resolve, reject) =>
-        (entry as FileSystemFileEntry).file(resolve, reject),
-      );
-      return [{ file, path }];
-    }
-    const reader = (entry as FileSystemDirectoryEntry).createReader();
-    const children: FileSystemEntry[] = [];
-    for (;;) {
-      const batch = await new Promise<FileSystemEntry[]>((resolve, reject) =>
-        reader.readEntries(resolve, reject),
-      );
-      if (!batch.length) break;
-      children.push(...batch);
-    }
-    return (
-      await Promise.all(
-        children.map((child) => collectDroppedEntry(child, path)),
-      )
-    ).flat();
-  };
-
-  const handleFolderDrop = async (event: React.DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    const entries = Array.from(event.dataTransfer.items)
-      .map((item) => item.webkitGetAsEntry?.())
-      .filter((entry): entry is FileSystemEntry => Boolean(entry));
-    if (!entries.length) return;
-    setFolderImportProgress(0);
-    const files = (
-      await Promise.all(entries.map((entry) => collectDroppedEntry(entry)))
-    ).flat();
-    await importFolderFiles(files);
   };
 
   const handleStartRenameNode = (nodeId: string) => {
@@ -1428,7 +1333,7 @@ const Dashboard: React.FC<DashboardProps> = ({
         },
         {
           id: 'import-folder',
-          label: 'Importer un dossier',
+          label: 'Importer des dossiers',
           icon: FolderPlus,
           onClick: () =>
             handleRequestImport('folder', node.id, `le dossier ${node.name}`),
@@ -1903,7 +1808,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                     },
                     {
                       id: 'root-import-folder',
-                      label: 'Importer un dossier',
+                      label: 'Importer des dossiers',
                       icon: FolderPlus,
                       onClick: () => handleRequestImport('folder'),
                     },
@@ -2187,72 +2092,24 @@ const Dashboard: React.FC<DashboardProps> = ({
         className="hidden"
         onChange={(event) => void handleImportedFile(event, 'image')}
       />
-      <input
-        ref={(element) => {
-          folderImportInputRef.current = element;
-          element?.setAttribute('webkitdirectory', '');
-          element?.setAttribute('directory', '');
-        }}
-        type="file"
-        multiple
-        className="hidden"
-        onChange={(event) => void handleImportedFolder(event)}
-      />
-
-      <Modal
+      <FolderImportModal
+        key={`${selectedProject?.id}:${importState?.parentFolderId ?? 'root'}`}
         isOpen={folderImportOpen}
-        title="Importer un dossier"
+        parentLabel={importState?.parentLabel ?? 'la racine du projet'}
+        existingNames={(importState?.parentFolderId
+          ? (findNodeById(
+              selectedProject?.files ?? [],
+              importState.parentFolderId,
+            )?.children ?? [])
+          : (selectedProject?.files ?? [])
+        ).map((entry) => entry.name)}
+        progress={folderImportProgress}
+        onImport={importFolderFiles}
         onClose={() => {
-          if (folderImportProgress === null) {
-            setFolderImportOpen(false);
-            setImportState(null);
-          }
+          setFolderImportOpen(false);
+          setImportState(null);
         }}
-      >
-        <div
-          className="rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 px-6 py-8 text-center transition-colors hover:border-emerald-500 hover:bg-emerald-50/40"
-          onDragOver={(event) => event.preventDefault()}
-          onDrop={(event) => void handleFolderDrop(event)}
-        >
-          <FolderPlus className="mx-auto mb-3 h-9 w-9 text-emerald-600" />
-          {folderImportProgress === null ? (
-            <>
-              <p className="text-sm font-semibold text-slate-700">
-                Glissez votre dossier ici
-              </p>
-              <p className="mt-1 text-xs text-slate-500">
-                L&apos;arborescence, les images et les fichiers seront
-                conservés.
-              </p>
-              <button
-                type="button"
-                className="mt-4 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
-                onClick={() => void handleChooseFolder()}
-              >
-                Choisir un dossier
-              </button>
-            </>
-          ) : (
-            <div className="space-y-3">
-              <Loader2 className="mx-auto h-7 w-7 animate-spin text-emerald-600" />
-              <p className="text-sm font-medium text-slate-700">
-                {folderImportProgress < 80
-                  ? 'Lecture des fichiers…'
-                  : 'Envoi du dossier…'}
-              </p>
-              <div className="h-2 overflow-hidden rounded-full bg-slate-200">
-                <div
-                  className="h-full rounded-full bg-emerald-500 transition-all duration-200"
-                  style={{ width: `${folderImportProgress}%` }}
-                />
-              </div>
-              <p className="text-xs tabular-nums text-slate-500">
-                {folderImportProgress}%
-              </p>
-            </div>
-          )}
-        </div>
-      </Modal>
+      />
 
       <Modal
         isOpen={Boolean(creationState)}

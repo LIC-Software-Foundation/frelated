@@ -54,22 +54,17 @@ export const env = {
   port: numberOr(process.env.PORT, 3100),
   host: process.env.HOST || '0.0.0.0',
 
-  // The queue this service reads job counts from. Only the concrete BullMQ
-  // adapter (src/adapters/bullMqQueueDepthProvider.ts) knows about these —
-  // the decision logic never sees them.
-  redisUrl: process.env.REDIS_URL || 'redis://localhost:6379',
-  // Must match `queueName` in apps/projects-api/src/compilation/queue.ts.
-  // Kept as its own env var (rather than importing that module) so the
-  // autoscaler's only real coupling to the current queue technology is this
-  // one adapter, easily swapped if the queue changes.
-  compilationQueueName: process.env.COMPILATION_QUEUE_NAME || 'frelated-latex',
-
-  // A waiting job whose (still-encrypted) payload is at least this big is
-  // considered "heavy" — a proxy for embedded content (mainly images), not
-  // a precise measurement. Read directly by the BullMQ adapter, never by
-  // the decision logic itself.
-  heavyJobPayloadThresholdBytes:
-    numberOr(process.env.HEAVY_JOB_PAYLOAD_THRESHOLD_MB, 3) * 1024 * 1024,
+  // The autoscaler sees the queue only through the queue service's scoped
+  // metrics endpoint; it never receives Redis credentials or job payloads.
+  compilationServiceUrl:
+    process.env.COMPILATION_SERVICE_URL || 'http://localhost:3200',
+  compilationAutoscalerToken:
+    process.env.COMPILATION_AUTOSCALER_TOKEN ||
+    'frelated-dev-autoscaler-token-change-me',
+  compilationServiceTimeoutMs: Math.max(
+    500,
+    numberOr(process.env.COMPILATION_SERVICE_TIMEOUT_MS, 3000),
+  ),
 
   // Docker orchestration of compilation-worker containers.
   dockerSocketPath: process.env.DOCKER_SOCKET_PATH || '/var/run/docker.sock',
@@ -81,10 +76,30 @@ export const env = {
   workerAuthSecret:
     process.env.AUTH_SECRET || 'frelated-dev-auth-secret-change-me',
   workerDataEncryptionKey: process.env.DATA_ENCRYPTION_KEY || '',
-  workerRedisUrl: process.env.REDIS_URL || 'redis://redis:6379',
+  workerRedisUrl:
+    process.env.COMPILATION_WORKER_REDIS_URL || 'redis://redis:6379',
+  workerCompilationServiceUrl:
+    process.env.COMPILATION_SERVICE_URL ||
+    'http://compilation-queue-service:3200',
+  workerCompilationServiceToken:
+    process.env.COMPILATION_WORKER_TOKEN ||
+    'frelated-dev-worker-token-change-me',
   workerCompilationTimeoutMs: numberOr(
     process.env.COMPILATION_TIMEOUT_MS,
     120_000,
+  ),
+  workerMemoryBytes:
+    numberOr(process.env.COMPILATION_WORKER_MEMORY_MB, 768) * 1024 * 1024,
+  workerNanoCpus: Math.round(
+    numberOr(process.env.COMPILATION_WORKER_CPUS, 1) * 1_000_000_000,
+  ),
+  workerPidsLimit: Math.max(
+    16,
+    Math.floor(numberOr(process.env.COMPILATION_WORKER_PIDS_LIMIT, 128)),
+  ),
+  workerTmpfsSizeMb: Math.max(
+    64,
+    Math.floor(numberOr(process.env.COMPILATION_WORKER_TMPFS_SIZE_MB, 384)),
   ),
   // Seconds Docker waits after SIGTERM before force-killing a worker being
   // scaled down. Long enough for BullMQ's graceful Worker#close() to let an

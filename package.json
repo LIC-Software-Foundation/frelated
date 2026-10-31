@@ -14,6 +14,8 @@
     "format": "prettier --write .",
     "prepare": "husky",
     "test": "pnpm -r test",
+    "benchmark:compilation": "node scripts/compilation-benchmark.mjs",
+    "test:compilation-benchmark": "node --test scripts/compilation-benchmark/benchmark.test.mjs",
     "dev": "pnpm -r --parallel run dev"
   },
   "devDependencies": {

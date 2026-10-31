@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { removeCompilation } from '../compilation/queue';
+import { compilationQueueClient } from '../compilation/client';
 import { z } from 'zod';
 import { env } from '../config/env';
 import { createSeedStore } from '../data/seed';
@@ -420,13 +420,15 @@ export const projectsService = {
     }
 
     await mongoStore.deleteProject(projectId);
-    if (process.env.REDIS_URL) {
-      await removeCompilation(projectId).catch((error) =>
-        console.warn(
-          'Nettoyage du cache de compilation différé:',
-          error.message,
-        ),
-      );
+    if (process.env.COMPILATION_SERVICE_URL) {
+      await compilationQueueClient
+        .remove(projectId)
+        .catch((error) =>
+          console.warn(
+            'Nettoyage du cache de compilation différé:',
+            error.message,
+          ),
+        );
     }
   },
 
